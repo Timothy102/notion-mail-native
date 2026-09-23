@@ -64,6 +64,15 @@ enum Snapshot {
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
             if let thread = inbox.first(where: { $0.subject.hasPrefix("The Sunday Stack") }) { app.open(thread.id) }
             if screen == "labels" { app.isLabelPickerOpen = true }
+        case "quotes", "quotes-expanded", "quotes-text", "quotes-text-expanded", "reply-quotes":
+            let subject = screen.hasPrefix("quotes-text") ? "Talk proposal" : "Brand refresh"
+            let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
+            if let thread = inbox.first(where: { $0.subject.contains(subject) }) { app.open(thread.id) }
+            QuotedHistory.snapshotExpanded = screen.hasSuffix("expanded")
+            if screen == "reply-quotes" {
+                ComposeModel.snapshotShowsQuoted = true
+                app.commands.run("thread.replyAll")
+            }
         case "compose": app.compose = ComposeRequest(.new(to: []))
         case "compose-draft":
             if let draft = (try? app.store.db.read(Store.drafts))?.first { app.compose = ComposeRequest(.draft(id: draft.id)) }

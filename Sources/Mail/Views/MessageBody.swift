@@ -21,6 +21,42 @@ struct MessageBody: View {
     }
 }
 
+/// Quoted history under a message body, collapsed behind Gmail's "•••" pill.
+struct QuotedHistory: View {
+    let html: String
+    var attachments: [Attachment] = []
+    var allowRemote = false
+    var onMailto: (EmailAddress) -> Void = { _ in }
+    @State private var isExpanded = QuotedHistory.snapshotExpanded
+    static var snapshotExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            QuoteToggle(isExpanded: $isExpanded)
+            if isExpanded { MessageBody(html: html, attachments: attachments, allowRemote: allowRemote, onMailto: onMailto) }
+        }
+    }
+}
+
+struct QuoteToggle: View {
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        Button { isExpanded.toggle() } label: {
+            Text("•••")
+                .font(.system(size: 8, weight: .bold))
+                .kerning(1)
+                .foregroundStyle(Theme.textTertiary)
+                .frame(width: 26, height: 12)
+                .background(Theme.hover, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isExpanded ? "Hide quoted text" : "Show quoted text")
+    }
+}
+
 enum MailHTML {
     /// Whether the HTML pulls anything from the network (images, backgrounds, stylesheets).
     static func hasRemoteContent(_ html: String) -> Bool {
@@ -47,7 +83,7 @@ enum MailHTML {
         p{margin:0}
         img{max-width:100%;height:auto}
         table{max-width:100%}
-        blockquote{margin:0;border-left:3px solid \(quote);padding:3px 2px 3px 14px}
+        blockquote{margin:4px 0 4px 4px!important;border-left:1px solid \(quote)!important;padding:0 0 0 12px!important}
         a{color:\(link);text-decoration-thickness:.05em;text-underline-offset:3px}
         ::selection{background:rgba(35,131,226,.28)}\(blocked)
         """

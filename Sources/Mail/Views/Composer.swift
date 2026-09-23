@@ -17,6 +17,7 @@ final class ComposeModel {
     var showsBcc = false
     var showsCcBcc: Bool { showsCc || showsBcc }
     var showsQuoted = false
+    static var snapshotShowsQuoted = false
     var isMinimized = false
     private(set) var requestId: UUID?
 
@@ -35,7 +36,7 @@ final class ComposeModel {
         requestId = request.id
         finished = false
         isMinimized = false
-        showsQuoted = false
+        showsQuoted = Self.snapshotShowsQuoted
         let fallback = EmailAddress(name: app.account?.name, email: app.account?.email ?? "")
         let signOnReplies = app.outbox.signOnReplies
         let restored = app.outbox.restore.removeValue(forKey: request.id)
@@ -508,22 +509,8 @@ private struct ComposeBody: View {
         VStack(alignment: .leading, spacing: 8) {
             MailTextView(text: $model.draft.body, placeholder: placeholder, focusOnAppear: focusOnAppear)
             if let quoted = model.draft.quoted {
-                Button { model.showsQuoted.toggle() } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Theme.textTertiary)
-                        .frame(width: 24, height: 16)
-                        .background(Theme.hover, in: RoundedRectangle(cornerRadius: Theme.Metrics.radiusSmall, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .help(model.showsQuoted ? "Hide quoted text" : "Show quoted text")
-                if model.showsQuoted {
-                    Text(quoted)
-                        .textStyle(.mailBody)
-                        .foregroundStyle(Theme.textTertiary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                QuoteToggle(isExpanded: $model.showsQuoted)
+                if model.showsQuoted { MessageBody(html: model.draft.quotedHTML ?? Quote.html(fromText: quoted)) }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -171,6 +171,8 @@ public struct OutgoingMessage: Sendable, Hashable {
     public var html: String?
     /// Quoted original for replies and forwards, appended below `text` (and `html`).
     public var quoted: String?
+    /// HTML form of `quoted` (Gmail's `gmail_quote` markup); derived from `quoted` when nil.
+    public var quotedHTML: String?
     public var inReplyTo: String?
     public var references: [String] = []
     /// Gmail thread to send into; not a header.
@@ -210,17 +212,22 @@ public struct OutgoingMessage: Sendable, Hashable {
         }
         if to.isEmpty { to = [sender] }
         let refs = m.references.split(whereSeparator: \.isWhitespace).map(String.init) + [m.messageIdHeader].filter { !$0.isEmpty }
-        return OutgoingMessage(
+        let attribution = Quote.attribution(date: m.date, sender: sender)
+        var out = OutgoingMessage(
             from: from, to: to, cc: cc, subject: MIME.prefixed("Re:", m.subject), text: "",
-            quoted: "On \(MIME.quoteDate(m.date)), \(sender.formatted) wrote:\n" + m.bodyText.split(separator: "\n", omittingEmptySubsequences: false).map { "> " + $0 }.joined(separator: "\n"),
+            quoted: Quote.replyText(attribution: attribution, body: m.bodyText),
             inReplyTo: m.messageIdHeader.isEmpty ? nil : m.messageIdHeader, references: refs, threadId: m.threadId
         )
+        out.quotedHTML = Quote.replyHTML(attribution: attribution, bodyHTML: Quote.bodyHTML(m))
+        return out
     }
 
     public static func forward(_ m: Message, from: EmailAddress) -> OutgoingMessage {
         var header = "---------- Forwarded message ---------\nFrom: \(m.from)\nDate: \(MIME.quoteDate(m.date))\nSubject: \(m.subject)\nTo: \(m.to)\n"
         if !m.cc.isEmpty { header += "Cc: \(m.cc)\n" }
-        return OutgoingMessage(from: from, to: [], subject: MIME.prefixed("Fwd:", m.subject), text: "", quoted: header + "\n" + m.bodyText, threadId: m.threadId)
+        var out = OutgoingMessage(from: from, to: [], subject: MIME.prefixed("Fwd:", m.subject), text: "", quoted: header + "\n" + m.bodyText, threadId: m.threadId)
+        out.quotedHTML = Quote.forwardHTML(m)
+        return out
     }
 }
 
@@ -531,7 +538,7 @@ public enum MIME {
 
     /// First ~200 characters of the new text, quoted lines skipped.
     public static func snippet(_ text: String) -> String {
-        let lines = text.split(separator: "\n").filter { !$0.hasPrefix(">") }
+        let lines = Quote.split(text: text).new.split(separator: "\n").filter { !$0.hasPrefix(">") }
         let flat = lines.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return String(flat.prefix(200))
     }
@@ -569,8 +576,10 @@ public enum MIME {
 
         let text = m.quoted.map { m.text + "\n\n" + $0 } ?? m.text
         var body: Entity = leaf("text/plain; charset=utf-8", Data(text.utf8), textual: true)
-        if let html = m.html {
-            let fullHTML = m.quoted.map { html + "<br><br><blockquote>" + htmlEscape($0).replacingOccurrences(of: "\n", with: "<br>") + "</blockquote>" } ?? html
+        let quotedHTML = m.quotedHTML ?? m.quoted.map(Quote.html(fromText:))
+        if m.html != nil || quotedHTML != nil {
+            let html = m.html ?? "<div dir=\"ltr\">" + Quote.html(fromText: m.text) + "</div>"
+            let fullHTML = quotedHTML.map { html + "<br>" + $0 } ?? html
             body = multipart("alternative", [body, leaf("text/html; charset=utf-8", Data(fullHTML.utf8), textual: true)])
         }
         if !m.attachments.isEmpty {

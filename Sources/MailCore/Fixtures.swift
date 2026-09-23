@@ -534,7 +534,40 @@ public enum Fixtures {
             T(subject: "Last chance: webinar on inbox zero", labels: ["TRASH"], messages: [
                 M(from: arc, to: [me], date: d.day(8, 12, 0), text: "Join our live webinar tomorrow at 5pm CET."),
             ]),
-        ] + extraInbox(d)
+        ] + extraInbox(d) + quotedThreads(d)
+    }
+
+    /// Back-and-forth where every reply quotes the whole previous message, so the last one nests three
+    /// levels deep: once as Gmail HTML (`gmail_quote`), once as plain text (`>` lines).
+    private static func quotedThreads(_ d: Dates) -> [T] {
+        func quoting(_ messages: [M], html: Bool) -> [M] {
+            var out: [M] = []
+            for var m in messages {
+                let typed = m.text
+                if html { m.html = "<div dir=\"ltr\">" + Quote.html(fromText: typed) + "</div>" }
+                if let prev = out.last {
+                    let attribution = Quote.attribution(date: prev.date, sender: prev.from)
+                    m.text = typed + "\n\n" + Quote.replyText(attribution: attribution, body: prev.text)
+                    if html { m.html! += "<br>" + Quote.replyHTML(attribution: attribution, bodyHTML: prev.html!) }
+                }
+                out.append(m)
+            }
+            return out
+        }
+        return [
+            T(subject: "Brand refresh: timeline and next steps", labels: ["INBOX", "Label_1"], messages: quoting([
+                M(from: jose, to: [me], date: d.day(5, 9, 14), text: "Hi Tim,\n\nGreat call yesterday. Proposed timeline: moodboards on the 3rd, two logo routes on the 10th, final files by the 24th.\n\nDoes that work on your side?\n\nJosé"),
+                M(from: me, to: [jose], date: d.day(5, 11, 2), text: "Hi José,\n\nWorks for us. Could we see the moodboards a couple of days earlier? Our investor update goes out on the 2nd.\n\nTim"),
+                M(from: jose, to: [me], date: d.day(5, 15, 40), text: "We can do the 1st if we skip the second photo route. Want me to go ahead?"),
+                M(from: me, to: [jose], date: d.day(4, 8, 55), text: "Yes, go ahead and skip it. Thanks!"),
+            ], html: true)),
+            T(subject: "Talk proposal for Swift Ljubljana", labels: ["INBOX"], messages: quoting([
+                M(from: lukasz, to: [me], date: d.day(9, 18, 20), text: "Hey Tim,\n\nWould you give a 25-minute talk at the November meetup? Something about building a native mail client would be perfect.\n\nŁukasz"),
+                M(from: me, to: [lukasz], date: d.day(9, 21, 5), text: "Happy to! Working title: \"SQLite, SwiftUI and 40,000 emails\". Is there a projector with USB-C?"),
+                M(from: lukasz, to: [me], date: d.day(8, 9, 30), text: "Love the title. Yes, USB-C and HDMI. Can you send a two-line abstract by Friday?"),
+                M(from: me, to: [lukasz], date: d.day(8, 12, 45), text: "Abstract: how a local-first mail client stays fast with a full-text index, and what SwiftUI still makes hard. Live demo included."),
+            ], html: false)),
+        ]
     }
 
     /// Shorter one- or two-message threads that round out a believable inbox.

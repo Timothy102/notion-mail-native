@@ -44,6 +44,7 @@ public struct ComposeDraft: Sendable, Hashable {
     public var body = ""
     /// Quoted original for replies and forwards; sent below `body`.
     public var quoted: String?
+    public var quotedHTML: String?
     public var inReplyTo: String?
     public var references: [String] = []
     public var threadId: String?
@@ -99,11 +100,13 @@ public struct ComposeDraft: Sendable, Hashable {
     }
 
     public func outgoing() -> OutgoingMessage {
-        OutgoingMessage(
+        var out = OutgoingMessage(
             from: from, to: to, cc: cc, bcc: bcc, subject: subject, text: body, quoted: quoted,
             inReplyTo: inReplyTo, references: references, threadId: threadId,
             attachments: attachments.compactMap { a in a.data.map { OutgoingAttachment(filename: a.filename, mimeType: a.mimeType, data: $0) } }
         )
+        out.quotedHTML = quotedHTML
+        return out
     }
 
     // MARK: Building from a request
@@ -152,6 +155,7 @@ public struct ComposeDraft: Sendable, Hashable {
         let out = mode == .forward ? OutgoingMessage.forward(m, from: from) : OutgoingMessage.reply(to: m, all: mode == .replyAll, from: from)
         var d = ComposeDraft(mode: mode, from: from, to: out.to, cc: out.cc, subject: out.subject)
         d.quoted = out.quoted
+        d.quotedHTML = out.quotedHTML
         d.inReplyTo = mode == .forward ? nil : out.inReplyTo
         d.references = mode == .forward ? [] : out.references
         d.threadId = mode == .forward ? nil : m.threadId
@@ -173,6 +177,7 @@ public struct ComposeDraft: Sendable, Hashable {
         cc = fresh.cc
         subject = fresh.subject
         quoted = fresh.quoted
+        quotedHTML = fresh.quotedHTML
         inReplyTo = fresh.inReplyTo
         references = fresh.references
         threadId = fresh.threadId
