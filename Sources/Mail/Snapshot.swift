@@ -29,8 +29,8 @@ enum Snapshot {
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
             if let thread = inbox.first(where: { $0.messageCount >= 5 }) ?? inbox.first { app.open(thread.id) }
         case "compose": app.compose = ComposeRequest(.new(to: []))
-        case "palette": app.palette = .commands
-        case "search": app.search("offsite")
+        case "palette": app.palette = Launch.env["MAIL_PALETTE"] == "search" ? .search : .commands
+        case "search": app.search(Launch.env["MAIL_QUERY"] ?? "offsite")
         case "empty": app.go(to: .spam)
         case "settings": app.settings = .signature
         default: break
