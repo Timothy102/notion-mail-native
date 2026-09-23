@@ -49,6 +49,11 @@ enum Snapshot {
             if let thread = inbox.first(where: { $0.subject.hasPrefix("The Sunday Stack") }) { app.open(thread.id) }
             if screen == "labels" { app.isLabelPickerOpen = true }
         case "compose": app.compose = ComposeRequest(.new(to: []))
+        case "compose-draft":
+            if let draft = (try? app.store.db.read(Store.drafts))?.first { app.compose = ComposeRequest(.draft(id: draft.id)) }
+        case "reply":
+            prepare(app, screen: "thread")
+            app.commands.run("thread.replyAll")
         case "palette": app.palette = Launch.env["MAIL_PALETTE"] == "search" ? .search : .commands
         case "search": app.search(Launch.env["MAIL_QUERY"] ?? "offsite")
         case "empty": app.go(to: .spam)

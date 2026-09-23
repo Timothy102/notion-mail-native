@@ -389,3 +389,49 @@ struct SlotIcon: View {
         Image(systemName: systemName).font(.system(size: 14, weight: .regular)).foregroundStyle(tint)
     }
 }
+
+/// Left-to-right wrapping layout, items centred vertically within their line. With `minLastWidth`,
+/// the last subview (an input) stretches to fill its line and wraps when less than that is left.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat?
+    var minLastWidth: CGFloat?
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let used = frames.map(\.maxX).max() ?? 0
+        let width = minLastWidth != nil ? (proposal.width ?? used) : min(proposal.width ?? used, used)
+        return CGSize(width: width, height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (frame, subview) in zip(arrange(width: bounds.width, subviews: subviews), subviews) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [CGRect] {
+        var frames: [CGRect] = []
+        var line: [Int] = []
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0
+        func closeLine() {
+            for i in line { frames[i].origin.y = y + (lineHeight - frames[i].height) / 2 }
+            y += lineHeight + (lineSpacing ?? spacing)
+            line = []; x = 0; lineHeight = 0
+        }
+        for (i, subview) in subviews.enumerated() {
+            var size = subview.sizeThatFits(ProposedViewSize(width: width.isFinite ? width : nil, height: nil))
+            let isStretching = minLastWidth != nil && i == subviews.count - 1
+            if isStretching { size.width = minLastWidth ?? 0 }
+            if !line.isEmpty, x + size.width > width { closeLine() }
+            if isStretching, width.isFinite { size.width = max(width - x, size.width) }
+            size.width = min(size.width, width)
+            frames.append(CGRect(origin: CGPoint(x: x, y: 0), size: size))
+            line.append(i)
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+        if !line.isEmpty { closeLine() }
+        return frames
+    }
+}

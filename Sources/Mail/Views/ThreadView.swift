@@ -434,48 +434,6 @@ enum MessageDate {
     }
 }
 
-/// Left-to-right wrapping row, for chips and attachment cards.
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = arrange(width: proposal.width ?? .infinity, subviews)
-        let width = rows.map { $0.width }.max() ?? 0
-        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(rows.count - 1, 0))
-        return CGSize(width: proposal.width.map { min($0, width) } ?? width, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = bounds.minY
-        for row in arrange(width: bounds.width, subviews) {
-            var x = bounds.minX
-            for i in row.indices {
-                let size = subviews[i].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
-                subviews[i].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: ProposedViewSize(width: min(size.width, bounds.width), height: size.height))
-                x += min(size.width, bounds.width) + spacing
-            }
-            y += row.height + spacing
-        }
-    }
-
-    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
-
-    private func arrange(width: CGFloat, _ subviews: Subviews) -> [Row] {
-        var rows: [Row] = [Row()]
-        for i in subviews.indices {
-            let size = subviews[i].sizeThatFits(ProposedViewSize(width: width, height: nil))
-            let w = min(size.width, width)
-            if !rows[rows.count - 1].indices.isEmpty, rows[rows.count - 1].width + spacing + w > width { rows.append(Row()) }
-            var row = rows[rows.count - 1]
-            row.width += (row.indices.isEmpty ? 0 : spacing) + w
-            row.height = max(row.height, size.height)
-            row.indices.append(i)
-            rows[rows.count - 1] = row
-        }
-        return rows.filter { !$0.indices.isEmpty }
-    }
-}
-
 extension ComposeRequest {
     /// Whether this reply or forward is for `messageId`.
     func targets(_ messageId: String) -> Bool {
