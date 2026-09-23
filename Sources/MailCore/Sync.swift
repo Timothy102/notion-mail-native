@@ -20,8 +20,10 @@ public enum SyncStatus: Sendable, Equatable {
 public struct Sync: Sendable {
     public static let backfillMonthsKey = "backfillMonths"
     public static let defaultBackfillMonths = 12
-    /// Gmail allows ~50 messages.get per second per user (250 quota units at 5 each); 429s back off in GmailClient.
-    static let fetchConcurrency = 40
+    /// Measured on Tim's account: 25 in flight fetches 200 full messages in ~2.8s; 40 trips Gmail's per-user rate limit.
+    static let fetchConcurrency = 25
+    /// The first chunk is small so the newest inbox rows paint within about a second.
+    static let firstChunk = 50
 
     public let gmail: GmailClient
     public let store: Store
@@ -41,6 +43,7 @@ public struct Sync: Sendable {
 
     /// Account, labels, send-as identities, mail (history, or a backfill when there is no usable history id) and drafts.
     public func run() async throws {
+        SyncLog.write("sync run start")
         let profile = try await gmail.profile()
         let sendAs = try await gmail.sendAs()
         let primary = sendAs.first { $0.isPrimary == true } ?? sendAs.first { $0.sendAsEmail.lowercased() == profile.emailAddress.lowercased() }
@@ -120,15 +123,24 @@ public struct Sync: Sendable {
         for (query, isWindow) in [("in:inbox", false), (window, true)] {
             var pageToken: String?
             repeat {
-                let page = try await gmail.listMessages(q: query, pageToken: pageToken, maxResults: 500, includeSpamTrash: isWindow)
+                let page = try await SyncLog.time("list \(isWindow ? "window" : "inbox")") {
+                    try await gmail.listMessages(q: query, pageToken: pageToken, maxResults: 500, includeSpamTrash: isWindow)
+                }
                 let ids = (page.messages ?? []).map(\.id)
+                SyncLog.write("  page: \(ids.count) ids, estimate \(page.resultSizeEstimate ?? -1), known \(ids.filter(have.contains).count)")
                 if isWindow { listedInWindow.formUnion(ids) }
                 total = max(total, isWindow ? page.resultSizeEstimate ?? 0 : 0, done.count + ids.count)
                 done.formUnion(ids.filter(have.contains))
                 let missing = ids.filter { !have.contains($0) }
-                for start in stride(from: 0, to: missing.count, by: 100) {
-                    let chunk = Array(missing[start..<min(start + 100, missing.count)])
-                    try ingest(try await gmail.messages(chunk, concurrency: Self.fetchConcurrency))
+                var start = 0
+                while start < missing.count {
+                    let size = done.isEmpty ? Self.firstChunk : 100
+                    let chunk = Array(missing[start..<min(start + size, missing.count)])
+                    start += chunk.count
+                    let fetchedChunk = try await SyncLog.time("  fetch \(chunk.count)") {
+                        try await gmail.messages(chunk, concurrency: Self.fetchConcurrency)
+                    }
+                    try await SyncLog.time("  ingest \(fetchedChunk.count) returned") { try ingest(fetchedChunk) }
                     have.formUnion(chunk)
                     done.formUnion(chunk)
                     await progress(done.count, max(total, done.count))

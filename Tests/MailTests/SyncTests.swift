@@ -47,7 +47,7 @@ final class StubGmail: URLProtocol, @unchecked Sendable {
 }
 
 final class SyncTests: XCTestCase {
-    private static func message(_ id: String, thread: String, labels: [String], subject: String = "Hello") -> String {
+    static func message(_ id: String, thread: String, labels: [String], subject: String = "Hello") -> String {
         let body = Data("Body of \(id)".utf8).base64EncodedString()
         return """
         {"id":"\(id)","threadId":"\(thread)","labelIds":[\(labels.map { "\"\($0)\"" }.joined(separator: ","))],"snippet":"Body of \(id)","internalDate":"\(Int(Date.now.timeIntervalSince1970 * 1000))",

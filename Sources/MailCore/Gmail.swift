@@ -150,24 +150,28 @@ public struct GmailClient: Sendable {
 
     /// Fetches many messages with at most `concurrency` requests in flight. Order follows `ids`; missing (404) ones are dropped.
     public func messages(_ ids: [String], format: MessageFormat = .full, concurrency: Int = 8) async throws -> [GmailMessage] {
+        // Plain iterator, no nested func mutating captured state: that shape returned 1 of 100 results in -O builds.
         try await withThrowingTaskGroup(of: (Int, GmailMessage?).self) { group in
             var results = [GmailMessage?](repeating: nil, count: ids.count)
-            var next = 0
-            func add() {
-                let i = next, id = ids[i]
-                group.addTask {
-                    do { return (i, try await self.message(id, format: format)) }
-                    catch let e as GmailError where e.status == 404 { return (i, nil) }
-                }
-                next += 1
+            var pending = ids.enumerated().makeIterator()
+            for _ in 0..<min(concurrency, ids.count) {
+                guard let (i, id) = pending.next() else { break }
+                group.addTask { (i, try await self.messageOrNil(id, format: format)) }
             }
-            while next < min(concurrency, ids.count) { add() }
             while let (i, m) = try await group.next() {
                 results[i] = m
-                if next < ids.count { add() }
+                if let (j, id) = pending.next() {
+                    group.addTask { (j, try await self.messageOrNil(id, format: format)) }
+                }
             }
             return results.compactMap { $0 }
         }
+    }
+
+    /// A message deleted between listing and fetching is skipped rather than failing the batch.
+    private func messageOrNil(_ id: String, format: MessageFormat) async throws -> GmailMessage? {
+        do { return try await message(id, format: format) }
+        catch let e as GmailError where e.status == 404 { return nil }
     }
 
     /// Gmail `q` search (the remote fallback for local search).
@@ -313,10 +317,12 @@ public struct GmailClient: Sendable {
                 refreshed = true
                 continue
             }
+            SyncLog.write("http \(status) \(method) \(path.prefix(40)) attempt \(attempt)")
             let rateLimited = status == 429 || (status == 403 && String(decoding: data, as: UTF8.self).contains("ateLimitExceeded"))
             if (rateLimited || status >= 500), attempt < 5 {
                 let retryAfter = http?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
-                let delay = retryAfter ?? min(32, pow(2, Double(attempt))) + Double.random(in: 0..<0.5)
+                // Gmail's limit is per second, so short backoffs recover fastest.
+                let delay = retryAfter ?? min(8, 0.5 * pow(2, Double(attempt))) + Double.random(in: 0..<0.25)
                 try await Task.sleep(for: .seconds(delay))
                 attempt += 1
                 continue
