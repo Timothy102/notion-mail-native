@@ -102,15 +102,15 @@ private struct AccountSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
-                Avatar(name: app.account?.name ?? "?", size: 44, fill: Theme.accent)
+                Avatar(name: app.account?.name ?? "?", size: 44, fill: Theme.accent, image: app.avatarImage)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(app.account?.name ?? "Not synced yet").textStyle(.bodyMedium)
+                    Text(app.account?.name ?? "Not synced yet").textStyle(.bodySemibold).foregroundStyle(Theme.textPrimary)
                     Text(app.account?.email ?? "").textStyle(.small).foregroundStyle(Theme.textSecondary)
                 }
             }
             .frame(minHeight: 72)
             .padding(.bottom, 4)
-            SettingsRow(title: "Name", detail: app.isDemo ? "Demo account" : "Your display name in Gmail") {
+            SettingsRow(title: "Name", detail: app.isDemo ? "Demo account" : "Your Google account name") {
                 Text(app.account?.name ?? "—").textStyle(.body).foregroundStyle(Theme.textSecondary)
             }
             SettingsRow(title: "Email", detail: "The Google account Mail syncs") {

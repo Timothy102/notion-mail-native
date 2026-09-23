@@ -9,10 +9,10 @@ struct AccountMenu: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Avatar(name: app.account?.name ?? "?", size: 32, fill: Theme.accent)
+                Avatar(name: app.account?.name ?? "?", size: 32, fill: Theme.accent, image: app.avatarImage)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(app.account?.name ?? "Not synced yet").textStyle(.bodyMedium).lineLimit(1)
-                    Text(app.account?.email ?? "").textStyle(.small).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                    Text(app.account?.name ?? "Not synced yet").textStyle(.bodySemibold).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                    Text(app.account?.email ?? "").textStyle(.small).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 }
             }
             .padding(.horizontal, 12)

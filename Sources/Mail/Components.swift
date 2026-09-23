@@ -113,15 +113,30 @@ struct LabelChip: View {
     }
 }
 
-/// Circle with an initial (§5.13). `fill` nil = neutral contact avatar.
+/// Circle with an initial (§5.13), or `image` cropped to the circle. `fill` nil = neutral contact avatar.
 struct Avatar: View {
     let name: String
     var size: CGFloat = 20
     var fill: Color?
+    var image: NSImage?
 
     var body: some View {
+        if let image {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+                .overlay { Circle().strokeBorder(Theme.border, lineWidth: 0.5) }
+        } else {
+            initialCircle
+        }
+    }
+
+    private var initialCircle: some View {
         let initial = name.first(where: { $0.isLetter || $0.isNumber }).map { String($0).uppercased() } ?? "?"
-        Circle()
+        return Circle()
             .fill(fill ?? Theme.elevated)
             .overlay { if fill == nil { Circle().strokeBorder(Theme.divider, lineWidth: 1) } }
             .overlay {

@@ -29,6 +29,8 @@ public struct Sync: Sendable {
     public var progress: @Sendable (_ fetched: Int, _ total: Int) async -> Void = { _, _ in }
     /// Called as soon as the profile is known, before any mail is fetched.
     public var onAccount: @Sendable (Account) async -> Void = { _ in }
+    /// Called with the PNG when a new Google profile photo has been cached.
+    public var onAvatar: @Sendable (Data) async -> Void = { _ in }
 
     public init(gmail: GmailClient, store: Store) {
         self.gmail = gmail
@@ -46,6 +48,7 @@ public struct Sync: Sendable {
         let primary = sendAs.first { $0.isPrimary == true } ?? sendAs.first { $0.sendAsEmail.lowercased() == profile.emailAddress.lowercased() }
         let displayName = primary?.displayName.flatMap { $0.isEmpty ? nil : $0 }
         try await publishAccount(email: profile.emailAddress, displayName: displayName)
+        await refreshGoogleProfile(email: profile.emailAddress)
         try store.save(sendAs: sendAs.map {
             SendAs(email: $0.sendAsEmail, displayName: $0.displayName ?? "", signature: $0.signature ?? "",
                    isDefault: $0.isDefault ?? false, isPrimary: $0.isPrimary ?? false, replyTo: $0.replyToAddress)
@@ -78,7 +81,7 @@ public struct Sync: Sendable {
         let sent = try await store.db.read { db in
             try String.fetchAll(db, sql: "SELECT \"from\" FROM messages WHERE labelIds LIKE '%SENT%' ORDER BY internalDate DESC LIMIT 50")
         }
-        let name = displayName ?? sent.lazy.compactMap(Self.displayName(from:)).first ?? email
+        let name = try store.get(Self.googleNameKey) ?? displayName ?? sent.lazy.compactMap(Self.displayName(from:)).first ?? email
         let account = Account(email: email, name: name)
         try store.save(account: account)
         await onAccount(account)
@@ -247,6 +250,9 @@ extension AppState {
         var sync = Sync(gmail: gmail, store: store)
         sync.onAccount = { account in
             await MainActor.run { [weak self] in self?.account = account }
+        }
+        sync.onAvatar = { png in
+            await MainActor.run { [weak self] in self?.avatarImage = NSImage(data: png) }
         }
         sync.progress = { fetched, total in
             await MainActor.run { [weak self] in self?.syncStatus = .backfilling(fetched: fetched, total: total) }

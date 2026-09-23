@@ -34,6 +34,7 @@ public actor Auth {
         "https://www.googleapis.com/auth/gmail.compose",
         "https://www.googleapis.com/auth/gmail.settings.basic",
         "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/userinfo.profile",
     ]
 
     private var accessToken: String?
