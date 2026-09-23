@@ -237,29 +237,120 @@ extension EmptyState {
     }
 }
 
-/// 8 skeleton rows at the row pitch, widths from a fixed sequence so nothing jumps.
+/// Skeleton rows at the row pitch with bars in the sender, subject and date columns. Widths come from a
+/// fixed sequence so nothing jumps; one soft highlight sweeps across all of them (static under Reduce Motion).
 struct SkeletonRows: View {
-    var senderX: CGFloat
-    var subjectX: CGFloat
-    @State private var dim = false
-    private static let widths: [(CGFloat, CGFloat)] = [(118, 284), (96, 212), (130, 300), (104, 246), (122, 188), (90, 320), (112, 262), (126, 230)]
+    var layout: RowLayout
+    var count = 8
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private static let widths: [(CGFloat, CGFloat, CGFloat)] = [(118, 284, 44), (96, 212, 38), (130, 300, 44), (104, 246, 52),
+                                                                (122, 188, 38), (90, 320, 44), (112, 262, 52), (126, 230, 38)]
+    private static let sweep: Double = 1.4
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Self.widths.indices, id: \.self) { i in
-                ZStack(alignment: .leading) {
-                    bar(Self.widths[i].0).offset(x: senderX)
-                    bar(Self.widths[i].1).offset(x: subjectX)
+        bars
+            .overlay {
+                if !reduceMotion {
+                    TimelineView(.animation) { context in
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.sweep) / Self.sweep
+                        highlight(phase: phase)
+                    }
+                    .mask(bars)
                 }
-                .frame(maxWidth: .infinity, minHeight: Theme.Metrics.rowHeight, alignment: .leading)
+            }
+            .accessibilityHidden(true)
+    }
+
+    private var bars: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<count, id: \.self) { i in
+                let (sender, subject, date) = Self.widths[i % Self.widths.count]
+                let dateX = layout.paneWidth - Theme.Metrics.dateTrailing - date
+                ZStack(alignment: .leading) {
+                    bar(sender).offset(x: layout.senderX)
+                    bar(max(0, min(subject, dateX - 32 - layout.subjectX))).offset(x: layout.subjectX)
+                    bar(date).offset(x: dateX)
+                }
+                .frame(maxWidth: .infinity, minHeight: Theme.Metrics.rowHeight, maxHeight: Theme.Metrics.rowHeight, alignment: .leading)
+                .opacity(1 - 0.6 * Double(i) / Double(max(count, 12)))
             }
         }
-        .opacity(dim ? 0.5 : 1)
-        .onAppear { withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { dim = true } }
     }
 
     private func bar(_ width: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.skeleton).frame(width: width, height: 14)
+    }
+
+    /// A band 40% of the width, eased so it lingers softly at the edges.
+    private func highlight(phase: Double) -> some View {
+        GeometryReader { geo in
+            let band = geo.size.width * 0.4
+            let t = phase < 0.5 ? 2 * phase * phase : 1 - pow(-2 * phase + 2, 2) / 2
+            LinearGradient(colors: [Theme.skeletonHighlight.opacity(0), Theme.skeletonHighlight, Theme.skeletonHighlight.opacity(0)],
+                           startPoint: .leading, endPoint: .trailing)
+                .frame(width: band)
+                .offset(x: -band + (geo.size.width + band) * t)
+        }
+    }
+}
+
+/// Thin accent bar: determinate when `fraction` is known, a gliding segment otherwise.
+struct LinearProgressBar: View {
+    var fraction: Double?
+    var height: CGFloat = 2
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Theme.progressTrack
+                if let fraction {
+                    Theme.accent
+                        .frame(width: geo.size.width * max(0.02, min(1, fraction)))
+                        .animation(.easeOut(duration: 0.6), value: fraction)
+                } else if reduceMotion {
+                    Theme.accent.opacity(0.4)
+                } else {
+                    TimelineView(.animation) { context in
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+                        let segment = geo.size.width * 0.3
+                        Theme.accent
+                            .frame(width: segment)
+                            .offset(x: -segment + (geo.size.width + segment) * (1 - pow(1 - phase, 2)))
+                    }
+                }
+            }
+            .clipped()
+        }
+        .frame(height: height)
+        .accessibilityElement()
+        .accessibilityLabel("Syncing mail")
+        .accessibilityValue(fraction.map { "\(Int($0 * 100)) percent" } ?? "")
+    }
+}
+
+/// 12 pt ring: fills to `fraction`, or spins a partial arc when it's unknown.
+struct ProgressRing: View {
+    var fraction: Double?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Theme.progressTrack, lineWidth: 1.75)
+            if let fraction {
+                Circle().trim(from: 0, to: max(0.04, min(1, fraction)))
+                    .stroke(Theme.accent, style: StrokeStyle(lineWidth: 1.75, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeOut(duration: 0.6), value: fraction)
+            } else {
+                TimelineView(.animation(paused: reduceMotion)) { context in
+                    Circle().trim(from: 0, to: 0.3)
+                        .stroke(Theme.accent, style: StrokeStyle(lineWidth: 1.75, lineCap: .round))
+                        .rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360))
+                }
+            }
+        }
+        .frame(width: 12, height: 12)
     }
 }
 
