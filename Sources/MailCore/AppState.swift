@@ -55,6 +55,7 @@ public final class AppState {
     public var compose: ComposeRequest?
     public var settings: SettingsPage?
     public var isLabelPickerOpen = false
+    public var notionPicker: NotionPickerRequest?
     public var isSidebarVisible = true
     public var theme: ThemePreference = .system
     public private(set) var toast: Toast?
@@ -66,6 +67,7 @@ public final class AppState {
         account = try? store.db.read(Store.account)
         actions.onToast = { [weak self] in self?.show($0) }
         registerCoreCommands()
+        registerIntegrationCommands()
     }
 
     /// Selection if any, else the open thread, else the keyboard-focused row.
@@ -149,6 +151,7 @@ public final class AppState {
     @discardableResult
     public func dismissTopmost() -> Bool {
         if palette != nil { palette = nil }
+        else if notionPicker != nil { notionPicker = nil }
         else if isLabelPickerOpen { isLabelPickerOpen = false }
         else if settings != nil { settings = nil }
         else if compose != nil { compose = nil }
