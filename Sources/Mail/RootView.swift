@@ -80,7 +80,13 @@ private struct Shell: View {
                     CommandPalette(mode: mode).transition(.opacity)
                 }
             }
+            .overlay {
+                if let request = app.notionPicker {
+                    NotionPicker(request: request).transition(.opacity)
+                }
+            }
             .animation(Theme.Motion.standard, value: app.compose?.id)
+            .animation(Theme.Motion.fast, value: app.notionPicker)
             .animation(Theme.Motion.fast, value: app.palette)
             .animation(Theme.Motion.fast, value: app.settings)
         }

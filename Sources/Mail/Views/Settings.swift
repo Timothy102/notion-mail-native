@@ -74,8 +74,7 @@ struct SettingsView: View {
         case .signature:
             SignatureSettings().padding(.top, 8)
         case .integrations:
-            SettingsRow(title: "Notion", detail: "Save threads to a database and link them to pages") { EmptyView() }
-            SettingsRow(title: "Google Calendar", detail: "Show today's events in the sidebar") { EmptyView() }
+            IntegrationsSettings()
         case .shortcuts:
             ForEach(app.commands.commands.filter { !$0.shortcuts.isEmpty }) { command in
                 HStack {

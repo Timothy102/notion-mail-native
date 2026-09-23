@@ -15,6 +15,9 @@ enum Snapshot {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
         prepare(app, screen: Launch.screen)
+        if Launch.screen == "calendar" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { scrollSidebarToEnd(window) }
+        }
         Task {
             try? await Task.sleep(for: .seconds(1.5))
             let ok = capture(window, to: path)
@@ -65,8 +68,25 @@ enum Snapshot {
             app.syncStatus = .backfilling(fetched: 1_240, total: 4_810)
         case "offline": app.syncStatus = .offline
         case "syncfailed": app.syncStatus = .failed("Gmail 503: Backend Error")
+        case "integrations": app.settings = .integrations
+        case "notion-save", "notion-link", "invite":
+            let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
+            let invite = inbox.first { $0.subject.hasPrefix("Invitation:") }
+            guard let thread = screen == "invite" ? invite : inbox.first else { break }
+            app.open(thread.id)
+            if screen == "notion-save" { app.notionPicker = .save(threadId: thread.id) }
+            if screen == "notion-link" { app.notionPicker = .link(threadId: thread.id) }
         default: break
         }
+    }
+
+    /// The sidebar is the leftmost scroll view; its Calendar section sits below the fold.
+    private static func scrollSidebarToEnd(_ window: NSWindow) {
+        func scrollViews(_ v: NSView) -> [NSScrollView] { (v as? NSScrollView).map { [$0] } ?? v.subviews.flatMap(scrollViews) }
+        guard let root = window.contentView,
+              let sidebar = scrollViews(root).min(by: { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }),
+              let doc = sidebar.documentView else { return }
+        doc.scroll(NSPoint(x: 0, y: doc.isFlipped ? doc.bounds.maxY : 0))
     }
 
     private static func capture(_ window: NSWindow, to path: String) -> Bool {
