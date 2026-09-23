@@ -5,6 +5,7 @@ import SwiftUI
 @main
 struct MailApp: App {
     @State private var app = AppState.launch()
+    @NSApplicationDelegateAdaptor private var delegate: SnapshotLauncher
 
     init() {
         NSApplication.shared.setActivationPolicy(Launch.snapshotPath == nil ? .regular : .prohibited)
@@ -17,7 +18,7 @@ struct MailApp: App {
                 .frame(minWidth: Theme.Metrics.windowMin.width, minHeight: Theme.Metrics.windowMin.height)
         }
         .windowStyle(.hiddenTitleBar)
-        .windowLevel(Launch.snapshotPath == nil ? .automatic : .desktop)
+        .defaultLaunchBehavior(Launch.snapshotPath == nil ? .automatic : .suppressed)
         .defaultSize(Launch.windowSize)
         .commands {
             CommandGroup(replacing: .newItem) {}

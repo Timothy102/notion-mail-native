@@ -6,7 +6,10 @@ import Security
 
 struct OAuthClient: Decodable {
     let client_id: String
-    let client_secret: String
+    let client_secret: String?
+
+    // Newer Desktop clients are downloaded without a secret; PKCE covers them.
+    var credentials: [String: String] { ["client_id": client_id, "client_secret": client_secret].compactMapValues { $0 } }
 
     // Google's "Desktop app" credentials JSON, downloaded from Cloud Console.
     static func load() throws -> OAuthClient {
@@ -38,10 +41,9 @@ public actor Auth {
         if !refresh, let accessToken, expiry > .now.addingTimeInterval(60) { return accessToken }
         guard let refresh = Keychain.get("refresh_token") else { return try await signIn() }
         let client = try OAuthClient.load()
-        return try await exchange([
-            "client_id": client.client_id, "client_secret": client.client_secret,
+        return try await exchange(client.credentials.merging([
             "refresh_token": refresh, "grant_type": "refresh_token",
-        ])
+        ]) { $1 })
     }
 
     public func signIn() async throws -> String {
@@ -64,11 +66,10 @@ public actor Auth {
         ]
         await MainActor.run { _ = NSWorkspace.shared.open(auth.url!) }
 
-        return try await exchange([
-            "client_id": client.client_id, "client_secret": client.client_secret,
+        return try await exchange(client.credentials.merging([
             "code": try await code.value, "code_verifier": verifier,
             "redirect_uri": redirect, "grant_type": "authorization_code",
-        ])
+        ]) { $1 })
     }
 
     public func signOut() {

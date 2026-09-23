@@ -1,5 +1,6 @@
 import AppKit
 import MailCore
+import SwiftUI
 
 /// MAIL_SNAPSHOT harness: puts the app in the state for MAIL_SCREEN, waits for it to render,
 /// captures this window to the PNG path and exits.
@@ -130,5 +131,24 @@ enum Snapshot {
         view.cacheDisplay(in: view.bounds, to: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+    }
+}
+
+/// Snapshot runs never show SwiftUI's window: this one is below the desktop from before its first frame,
+/// so nothing flashes on the user's screen while screencapture -l still reads it.
+@MainActor
+final class SnapshotLauncher: NSObject, NSApplicationDelegate {
+    private var window: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard Launch.snapshotPath != nil else { return }
+        let app = AppState.launch()
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Launch.windowSize),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+        window.contentView = NSHostingView(rootView: RootView().environment(app))
+        window.orderFrontRegardless()
+        self.window = window
     }
 }
