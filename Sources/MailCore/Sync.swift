@@ -39,8 +39,9 @@ public struct Sync: Sendable {
     public func run() async throws {
         let profile = try await gmail.profile()
         let sendAs = try await gmail.sendAs()
-        let primary = sendAs.first { $0.isPrimary == true }
-        try store.save(account: Account(email: profile.emailAddress, name: primary?.displayName ?? profile.emailAddress))
+        let primary = sendAs.first { $0.isPrimary == true } ?? sendAs.first { $0.sendAsEmail.lowercased() == profile.emailAddress.lowercased() }
+        let name = primary?.displayName.flatMap { $0.isEmpty ? nil : $0 } ?? profile.emailAddress
+        try store.save(account: Account(email: profile.emailAddress, name: name))
         try store.save(sendAs: sendAs.map {
             SendAs(email: $0.sendAsEmail, displayName: $0.displayName ?? "", signature: $0.signature ?? "",
                    isDefault: $0.isDefault ?? false, isPrimary: $0.isPrimary ?? false, replyTo: $0.replyToAddress)

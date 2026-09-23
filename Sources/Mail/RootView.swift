@@ -5,19 +5,18 @@ import SwiftUI
 /// Window shell (SPEC §4.1). Owns layout and layering only; every region is a feature view.
 struct RootView: View {
     @Environment(AppState.self) private var app
-    @State private var signedIn: Bool?
     @State private var keys = KeyRouter()
 
     var body: some View {
         Group {
-            if app.isDemo || signedIn == true {
+            if app.isSignedIn == true {
                 Shell()
                     .onAppear {
                         keys.install(app)
                         app.startSync()
                     }
-            } else if signedIn == false {
-                SignInView { signedIn = true }
+            } else if app.isSignedIn == false {
+                SignInView { app.isSignedIn = true }
             } else {
                 Theme.page
             }
@@ -27,7 +26,7 @@ struct RootView: View {
             if Launch.snapshotPath != nil { Snapshot.run(app, window: window) }
         })
         .onChange(of: app.theme, initial: true) { NSApp.appearance = app.theme.appearance }
-        .task { if !app.isDemo { signedIn = await Auth.shared.isSignedIn } }
+        .task { if app.isSignedIn == nil { app.isSignedIn = await Auth.shared.isSignedIn } }
     }
 
     private func configure(_ window: NSWindow) {
@@ -71,6 +70,17 @@ private struct Shell: View {
                     .padding(.leading, (app.isSidebarVisible ? Theme.Metrics.sidebarWidth : 0) + 16)
                     .padding(.bottom, Theme.Metrics.toastBottom)
             }
+            .overlay(alignment: .topLeading) {
+                if app.isAccountMenuOpen {
+                    ZStack(alignment: .topLeading) {
+                        Color.clear.contentShape(Rectangle()).onTapGesture { app.isAccountMenuOpen = false }
+                        AccountMenu()
+                            .padding(.leading, Theme.Metrics.sidebarItemInset + 4)
+                            .padding(.top, Theme.Metrics.titleBarHeight + 40)
+                            .transition(.opacity.combined(with: .offset(y: -4)))
+                    }
+                }
+            }
             .overlay {
                 if let page = app.settings {
                     SettingsView(page: page).transition(.opacity)
@@ -90,6 +100,7 @@ private struct Shell: View {
             .animation(Theme.Motion.fast, value: app.notionPicker)
             .animation(Theme.Motion.fast, value: app.palette)
             .animation(Theme.Motion.fast, value: app.settings)
+            .animation(Theme.Motion.fast, value: app.isAccountMenuOpen)
         }
         .ignoresSafeArea()
         .task {

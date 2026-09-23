@@ -42,6 +42,8 @@ public struct ComposeDraft: Sendable, Hashable {
     public var subject = ""
     /// Plain text, including the signature block when one was inserted.
     public var body = ""
+    /// The plain-text signature inserted at the end of `body`, "" when none.
+    public var signature = ""
     /// Quoted original for replies and forwards; sent below `body`.
     public var quoted: String?
     public var quotedHTML: String?
@@ -54,8 +56,6 @@ public struct ComposeDraft: Sendable, Hashable {
     public var draftId: String?
     public var draftMessageId: String?
 
-    public static let signatureDelimiter = "-- "
-
     public init(mode: Mode, from: EmailAddress, to: [EmailAddress] = [], cc: [EmailAddress] = [], subject: String = "") {
         self.mode = mode
         self.from = from
@@ -64,22 +64,32 @@ public struct ComposeDraft: Sendable, Hashable {
         self.subject = subject
     }
 
-    public static func signatureBlock(_ identity: SendAs?) -> String {
-        let text = MIME.plainText(fromHTML: identity?.signature ?? "")
-        return text.isEmpty ? "" : "\n\n\(signatureDelimiter)\n\(text)"
+    /// The signature below a blank line, where a new message or reply starts.
+    public static func signatureBlock(_ text: String) -> String {
+        text.isEmpty ? "" : "\n\n" + text
+    }
+
+    /// `body` with the signature split off, when it is still there unchanged.
+    static func splitSignature(_ body: String, signature: String) -> (typed: String, signature: String) {
+        guard !signature.isEmpty, let range = body.range(of: signatureBlock(signature), options: .backwards) else { return (body, "") }
+        return (String(body[..<range.lowerBound]) + body[range.upperBound...], signature)
     }
 
     /// Body with the signature block and surrounding whitespace removed: what the user typed.
     public var typedText: String {
-        let cut = body.range(of: "\n\(Self.signatureDelimiter)\n").map { String(body[..<$0.lowerBound]) } ?? body
-        return cut.trimmingCharacters(in: .whitespacesAndNewlines)
+        Self.splitSignature(body, signature: signature).typed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Appends `text` as a new paragraph after what was typed, keeping the signature block below.
     public mutating func insert(_ text: String) {
-        let signature = body.range(of: "\n\(Self.signatureDelimiter)\n").map { String(body[$0.lowerBound...]) } ?? ""
+        let kept = Self.splitSignature(body, signature: signature).signature
         let typed = typedText
-        body = (typed.isEmpty ? text : typed + "\n\n" + text) + (signature.isEmpty ? "" : "\n" + signature)
+        body = (typed.isEmpty ? text : typed + "\n\n" + text) + Self.signatureBlock(kept)
+    }
+
+    mutating func sign(_ text: String) {
+        signature = text
+        body = Self.signatureBlock(text)
     }
 
     /// Nothing worth keeping as a draft.
@@ -91,10 +101,11 @@ public struct ComposeDraft: Sendable, Hashable {
     public var recipients: [EmailAddress] { to + cc + bcc }
 
     /// Swaps the signature block of `old` for that of `new` when the body still contains it.
-    public mutating func switchIdentity(to identity: SendAs, from old: SendAs?) {
-        let previous = Self.signatureBlock(old), next = Self.signatureBlock(identity)
-        if !previous.isEmpty, let range = body.range(of: previous, options: .backwards) {
-            body.replaceSubrange(range, with: next)
+    /// `next` is the new identity's signature (`Signature.text`).
+    public mutating func switchIdentity(to identity: SendAs, signature next: String) {
+        if !signature.isEmpty, let range = body.range(of: Self.signatureBlock(signature), options: .backwards) {
+            body.replaceSubrange(range, with: Self.signatureBlock(next))
+            signature = next
         }
         from = identity.address
     }
@@ -119,7 +130,7 @@ public struct ComposeDraft: Sendable, Hashable {
         switch kind {
         case .new(let to):
             var d = ComposeDraft(mode: .new, from: defaultFrom, to: to)
-            d.body = signatureBlock(defaultIdentity)
+            d.sign(try Signature.text(for: defaultIdentity, db: db))
             return d
         case .reply(let messageId, let all):
             guard let m = try Store.message(db, id: messageId) else { return ComposeDraft(mode: .new, from: defaultFrom) }
@@ -137,6 +148,7 @@ public struct ComposeDraft: Sendable, Hashable {
             d.bcc = EmailAddress.parseList(m.bcc)
             d.subject = m.subject
             d.body = m.bodyText
+            d.signature = try Signature.text(for: identities.first { $0.email.lowercased() == m.sender.email.lowercased() }, db: db)
             d.inReplyTo = m.inReplyTo.isEmpty ? nil : m.inReplyTo
             d.references = m.references.split(whereSeparator: \.isWhitespace).map(String.init)
             d.threadId = draft.threadId
@@ -160,7 +172,7 @@ public struct ComposeDraft: Sendable, Hashable {
         d.references = mode == .forward ? [] : out.references
         d.threadId = mode == .forward ? nil : m.threadId
         d.sourceMessageId = m.id
-        d.body = signOnReplies ? signatureBlock(identity) : ""
+        if signOnReplies { d.sign(try Signature.text(for: identity, db: db)) }
         if mode == .forward {
             d.attachments = try Attachment.filter(Column("messageId") == m.id).fetchAll(db).filter { !$0.isInline }.map(ComposeAttachment.init)
         }
@@ -400,17 +412,20 @@ public final class Outbox {
 
     // MARK: Signatures
 
-    /// Saves the signature locally and pushes it to Gmail (`sendAs.patch`).
-    public func updateSignature(_ identity: SendAs, html: String) async throws {
+    /// Pushes the signature to Gmail (`sendAs.patch`) and keeps it as the local one too.
+    /// Only the explicit "Save to Gmail" button calls this.
+    public func updateSignature(_ identity: SendAs, text: String) async throws {
         guard let store else { return }
+        let html = Self.signatureHTML(fromText: text)
         var updated = identity
         updated.signature = html
         if let gmail { _ = try await gmail.updateSignature(sendAsEmail: identity.email, signature: html) }
         try store.save(sendAs: [updated])
+        try store.saveLocalSignature(text, for: identity)
     }
 
     /// Plain-text signature to the HTML Gmail stores.
-    public static func signatureHTML(fromText text: String) -> String {
+    nonisolated public static func signatureHTML(fromText text: String) -> String {
         MIME.htmlEscape(text.trimmingCharacters(in: .whitespacesAndNewlines)).replacingOccurrences(of: "\n", with: "<br>")
     }
 
