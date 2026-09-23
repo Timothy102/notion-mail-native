@@ -90,12 +90,15 @@ enum Snapshot {
     }
 
     private static func capture(_ window: NSWindow, to path: String) -> Bool {
-        try? FileManager.default.removeItem(atPath: path)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        p.arguments = ["-l", "\(window.windowNumber)", "-o", "-x", path]
-        if (try? p.run()) != nil { p.waitUntilExit() }
-        if FileManager.default.fileExists(atPath: path), p.terminationStatus == 0 { return true }
+        for _ in 0..<3 {
+            try? FileManager.default.removeItem(atPath: path)
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            p.arguments = ["-l", "\(window.windowNumber)", "-o", "-x", path]
+            if (try? p.run()) != nil { p.waitUntilExit() }
+            if FileManager.default.fileExists(atPath: path), p.terminationStatus == 0 { return true }
+            Thread.sleep(forTimeInterval: 0.4)
+        }
         // Fallback when screen capture isn't permitted: render the content view (no window chrome).
         guard let view = window.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
         view.cacheDisplay(in: view.bounds, to: rep)

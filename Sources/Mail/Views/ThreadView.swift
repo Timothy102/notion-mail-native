@@ -274,7 +274,12 @@ private struct MessageView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             content(html: message.bodyHTML)
-            let files = attachments.filter { !$0.isInline }
+            ForEach(attachments.filter { $0.mimeType.lowercased() == "text/calendar" }) { invite in
+                InviteAttachment(attachment: invite)
+                    .padding(.horizontal, Theme.Metrics.readerPadding)
+                    .padding(.bottom, 16)
+            }
+            let files = attachments.filter { !$0.isInline && !Self.rendersAsInvite($0) }
             if !files.isEmpty {
                 AttachmentList(attachments: files).padding(.horizontal, Theme.Metrics.readerPadding).padding(.bottom, 24)
             }
@@ -358,7 +363,29 @@ private struct MessageView: View {
         .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous).strokeBorder(Theme.divider, lineWidth: 1))
     }
 
+    /// Invites whose bytes are local and parse show as an InviteCard instead of a file card.
+    static func rendersAsInvite(_ a: Attachment) -> Bool {
+        a.mimeType.lowercased() == "text/calendar" && a.data.map { !ICS.events($0).isEmpty } == true
+    }
+
     static func allowKey(_ email: String) -> String { "images.allow.\(email.lowercased())" }
+}
+
+/// An .ics attachment as an InviteCard, downloading the bytes first when they live on Gmail.
+private struct InviteAttachment: View {
+    let attachment: Attachment
+    @Environment(AppState.self) private var app
+    @State private var data: Data?
+
+    var body: some View {
+        Group {
+            if let data = data ?? attachment.data { InviteCard(ics: data) }
+        }
+        .task(id: attachment.id) {
+            guard attachment.data == nil, let gmail = app.gmail, let remoteId = attachment.gmailAttachmentId else { return }
+            data = try? await gmail.attachment(messageId: attachment.messageId, id: remoteId)
+        }
+    }
 }
 
 /// Attachment cards: type icon, name, size. Click opens the file with its default app.

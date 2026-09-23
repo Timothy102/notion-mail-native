@@ -27,7 +27,7 @@ struct MailApp: App {
 /// Launch-time configuration from the environment.
 ///
 /// - `MAIL_DEMO=1`: in-memory database seeded with fixtures, no network.
-/// - `MAIL_SCREEN`: inbox | thread | compose | palette | search | sidebar | empty | settings | syncing | offline | syncfailed
+/// - `MAIL_SCREEN`: see scripts/snap.sh for the list; `MAIL_QUERY` (search), `MAIL_PALETTE=search`, `MAIL_NOTION=off` tune them.
 /// - `MAIL_THEME`: light | dark
 /// - `MAIL_SNAPSHOT=/path.png`: render `MAIL_SCREEN`, capture the window, exit. Implies demo.
 /// - `MAIL_WINDOW=1440x900`: window size (default 1280x800).

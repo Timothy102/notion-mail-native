@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 out="${1:-snapshots}"
 [ $# -gt 0 ] && shift
-screens="${*:-inbox thread compose palette search sidebar empty settings}"
+screens="${*:-inbox rows toast empty thread html attachments labels invite reply compose compose-draft palette search sidebar calendar settings integrations notion-save notion-link syncing offline syncfailed}"
 mkdir -p "$out"
 swift build --product Mail
 bin="$(swift build --product Mail --show-bin-path)/Mail"

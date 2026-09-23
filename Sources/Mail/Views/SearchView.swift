@@ -42,6 +42,11 @@ struct SearchView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            if app.isLabelPickerOpen, app.openThreadId == nil {
+                LabelPickerLayer(alignment: .top).padding(.top, Theme.Metrics.paneHeaderHeight)
+            }
+        }
         .onChange(of: query, initial: true) { observeLocal() }
         .task(id: query) { await searchGmail() }
         .onAppear { labels.observe(app.store) { try Store.labels($0) } }

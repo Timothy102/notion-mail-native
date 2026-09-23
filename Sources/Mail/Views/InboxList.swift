@@ -212,9 +212,9 @@ struct PaneHeader<Accessory: View>: View {
                     }
                 }
                 IconButton(systemName: "arrow.clockwise", help: "Refresh") {
-                    app.show(Toast(app.isDemo ? "Demo mode: nothing to sync" : app.syncStatus == .syncing ? "Syncing…" : "Up to date"))
+                    if app.isDemo { app.show(Toast("Demo mode: nothing to sync")) } else { app.syncNow() }
                 }
-                .disabled(app.syncStatus == .syncing)
+                .disabled(app.syncStatus == .syncing || app.syncStatus.isBackfilling)
             }
         }
         .padding(.leading, 74)
