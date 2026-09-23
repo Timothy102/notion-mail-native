@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import GRDB
 import Network
@@ -267,7 +266,7 @@ extension AppState {
             await MainActor.run { [weak self] in self?.account = account }
         }
         sync.onAvatar = { png in
-            await MainActor.run { [weak self] in self?.avatarImage = NSImage(data: png) }
+            await MainActor.run { [weak self] in self?.avatarImage = PlatformImage(data: png) }
         }
         sync.progress = { fetched, total in
             await MainActor.run { [weak self] in self?.syncStatus = .backfilling(fetched: fetched, total: total) }
@@ -285,7 +284,7 @@ extension AppState {
                 tick.yield()
             }
         }
-        let activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: nil) { _ in
+        let activation = NotificationCenter.default.addObserver(forName: Platform.didBecomeActive, object: nil, queue: nil) { _ in
             tick.yield()
         }
         let monitor = NWPathMonitor()

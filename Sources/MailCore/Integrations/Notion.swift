@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import GRDB
 
@@ -241,7 +240,7 @@ extension AppState {
                     },
             Command(id: "notion.open", title: "Open linked Notion page", group: .thread, icon: "arrow.up.forward.square",
                     keywords: ["notion"], isAvailable: { latestLink() != nil }) {
-                        if let link = latestLink(), let url = URL(string: link.url) { NSWorkspace.shared.open(url) }
+                        if let link = latestLink(), let url = URL(string: link.url) { Platform.open(url) }
                     },
             Command(id: "integrations.settings", title: "Connect Notion", group: .misc, icon: "link.badge.plus",
                     keywords: ["notion", "token", "calendar", "integrations"]) { [unowned self] in settings = .integrations },

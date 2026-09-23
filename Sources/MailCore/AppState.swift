@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Observation
 
@@ -41,7 +40,7 @@ public final class AppState {
 
     public var account: Account?
     /// Google profile photo; nil shows the letter avatar.
-    public var avatarImage: NSImage?
+    public var avatarImage: PlatformImage?
     public var syncStatus: SyncStatus = .idle
     /// Until the first backfill completes an empty list means "not synced yet", not "no mail".
     public var isAwaitingFirstSync = false
@@ -82,7 +81,7 @@ public final class AppState {
         self.avatarURL = avatarURL
         actions = MailActions(store: store, gmail: gmail)
         account = try? store.db.read(Store.account)
-        avatarImage = avatarURL.flatMap(NSImage.init(contentsOf:))
+        avatarImage = avatarURL.flatMap(Platform.image(contentsOf:))
         if gmail != nil { theme = UserDefaults.standard.string(forKey: Self.themeKey).flatMap(ThemePreference.init(rawValue:)) ?? .system }
         actions.onToast = { [weak self] in self?.show($0) }
         registerCoreCommands()
