@@ -5,7 +5,7 @@ struct MailApp: App {
     init() { NSApplication.shared.setActivationPolicy(.regular) }
 
     var body: some Scene {
-        WindowGroup("Mail") { RootView().frame(minWidth: 900, minHeight: 600) }
+        WindowGroup("Mail") { RootView().frame(minWidth: Theme.Metrics.windowMin.width, minHeight: Theme.Metrics.windowMin.height) }
     }
 }
 
@@ -14,17 +14,17 @@ struct RootView: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(spacing: Theme.gutter) {
+        VStack {
             if let email {
-                Text(email).font(Theme.listSender)
+                Text(email).textStyle(.bodyMedium)
             } else {
                 Button("Sign in with Google") { Task { await load() } }
             }
-            if let error { Text(error).font(Theme.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let error { Text(error).textStyle(.small).foregroundStyle(Theme.textRed).textSelection(.enabled) }
         }
-        .foregroundStyle(Theme.text)
+        .foregroundStyle(Theme.textPrimary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.background)
+        .background(Theme.page)
         .task { if await Auth.shared.isSignedIn { await load() } }
     }
 

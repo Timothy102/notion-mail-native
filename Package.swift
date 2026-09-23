@@ -5,6 +5,6 @@ let package = Package(
     name: "Mail",
     platforms: [.macOS(.v15)],
     targets: [
-        .executableTarget(name: "Mail", path: "Sources/Mail")
+        .executableTarget(name: "Mail", path: "Sources/Mail", resources: [.copy("Fonts")])
     ]
 )

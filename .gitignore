@@ -1,3 +1,5 @@
 .build/
 *.xcodeproj/xcuserdata/
 Fonts/Lyon*
+design/ref/
+.build-workflow.js
