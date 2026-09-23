@@ -340,16 +340,21 @@ private struct MessageView: View {
             if let html, !html.isEmpty {
                 let remote = MailHTML.hasRemoteContent(html)
                 let allow = showImagesOnce || allowedSender
+                let parts = Quote.split(html: html)
+                let mailto: (EmailAddress) -> Void = { to in app.compose = ComposeRequest(.new(to: [to])) }
                 if remote, !allow { imagesBanner }
-                MessageBody(html: html, attachments: attachments, allowRemote: remote && allow) { to in
-                    app.compose = ComposeRequest(.new(to: [to]))
+                MessageBody(html: parts.new, attachments: attachments, allowRemote: remote && allow, onMailto: mailto)
+                if let quoted = parts.quoted {
+                    QuotedHistory(html: quoted, attachments: attachments, allowRemote: remote && allow, onMailto: mailto)
                 }
             } else {
-                Text(message.bodyText.trimmingCharacters(in: .whitespacesAndNewlines))
+                let parts = Quote.split(text: message.bodyText)
+                Text(parts.new.trimmingCharacters(in: .whitespacesAndNewlines))
                     .textStyle(.mailBody)
                     .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                if let quoted = parts.quoted { QuotedHistory(html: Quote.html(fromText: quoted)) }
             }
         }
         .padding(.horizontal, Theme.Metrics.readerPadding)
