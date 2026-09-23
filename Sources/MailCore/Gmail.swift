@@ -120,10 +120,10 @@ public struct GmailClient: Sendable {
     public static let base = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/")!
 
     /// Returns an access token; `true` forces a refresh (after a 401).
-    private let token: @Sendable (_ refresh: Bool) async throws -> String
+    public let token: @Sendable (_ refresh: Bool) async throws -> String
     private let session: URLSession
 
-    public init(token: @escaping @Sendable (_ refresh: Bool) async throws -> String = { try await Auth.shared.token(refresh: $0) },
+    public init(token: @escaping @Sendable (_ refresh: Bool) async throws -> String,
                 session: URLSession = .shared) {
         self.token = token
         self.session = session

@@ -7,6 +7,12 @@ import UniformTypeIdentifiers
 /// `MIME.parse`, so demo mode exercises the same ingest path as real Gmail mail.
 public enum Fixtures {
     public static let me = EmailAddress(name: "Tim Cvetko", email: "cvetko.tim@gmail.com")
+    /// Demo accounts for the switcher: `me` first. Every one shows the same fixture mail.
+    public static let accounts = [
+        Account(email: me.email, name: me.name!),
+        Account(email: "tim@helio.dev", name: "Tim Cvetko"),
+        Account(email: "team@helio.dev", name: "Helio Team"),
+    ]
 
     public static func seed(_ store: Store, now: Date = .now) throws {
         try store.save(account: Account(email: me.email, name: me.name!))

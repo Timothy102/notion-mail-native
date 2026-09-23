@@ -597,7 +597,7 @@ private struct EventMenu: View {
             if events.isEmpty { Text(feed?.status == .loading ? "Loading events…" : "No upcoming events") }
         }
         .task {
-            let feed = CalendarFeed(client: app.isDemo ? nil : GoogleCalendarClient())
+            let feed = CalendarFeed(client: app.gmail.map { GoogleCalendarClient(token: $0.token) })
             self.feed = feed
             await feed.refresh()
         }

@@ -31,6 +31,8 @@ public struct Sync: Sendable {
     public var progress: @Sendable (_ fetched: Int, _ total: Int) async -> Void = { _, _ in }
     /// Called as soon as the profile is known, before any mail is fetched.
     public var onAccount: @Sendable (Account) async -> Void = { _ in }
+    /// Where the Google profile photo is cached; nil skips it.
+    public var avatarURL: URL?
     /// Called with the PNG when a new Google profile photo has been cached.
     public var onAvatar: @Sendable (Data) async -> Void = { _ in }
 
@@ -260,6 +262,7 @@ extension AppState {
         guard let gmail, syncLoop == nil else { return }
         isAwaitingFirstSync = (try? store.get("historyId")) == nil
         var sync = Sync(gmail: gmail, store: store)
+        sync.avatarURL = avatarURL
         sync.onAccount = { account in
             await MainActor.run { [weak self] in self?.account = account }
         }
@@ -311,6 +314,17 @@ extension AppState {
             NotificationCenter.default.removeObserver(activation)
         }
         syncTick = tick
+    }
+
+    /// Cancels the sync loop; the returned task ends once an in-flight run has unwound.
+    @discardableResult
+    public func stopSync() -> Task<Void, Never>? {
+        let loop = syncLoop
+        loop?.cancel()
+        syncTick?.finish()
+        syncLoop = nil
+        syncTick = nil
+        return loop
     }
 
     /// Syncs as soon as the current run (if any) finishes.

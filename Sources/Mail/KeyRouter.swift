@@ -13,6 +13,7 @@ final class KeyRouter {
 
     func install(_ app: AppState) {
         self.app = app
+        pending = []
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let consumed = MainActor.assumeIsolated { self?.handle(event) ?? false }

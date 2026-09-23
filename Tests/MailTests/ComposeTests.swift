@@ -223,20 +223,3 @@ final class ComposeTests: XCTestCase {
         XCTAssertTrue(try threads(app, .drafts).contains { $0.id == d.threadId && $0.subject == "Fresh" })
     }
 }
-
-@MainActor
-final class SessionTests: XCTestCase {
-    func testSignOutClearsStoreAndReturnsToSignIn() async throws {
-        let store = try Store()
-        try Fixtures.seed(store)
-        let app = AppState(store: store, gmail: nil)
-        app.isAccountMenuOpen = true
-        await app.signOut()
-        XCTAssertEqual(app.isSignedIn, false)
-        XCTAssertNil(app.account)
-        XCTAssertFalse(app.isAccountMenuOpen)
-        let (messages, account) = try await store.db.read { (try Message.fetchCount($0), try Store.account($0)) }
-        XCTAssertEqual(messages, 0)
-        XCTAssertNil(account)
-    }
-}

@@ -1,22 +1,30 @@
 import MailCore
 import SwiftUI
 
-/// Dropdown under the sidebar's account row (§5.10): who is signed in, settings, appearance,
-/// shortcuts and sign out.
+/// Dropdown under the sidebar's account row (§5.10): the signed-in accounts (⌘1…⌘9 switch), add account,
+/// settings, appearance, shortcuts and sign out of the open account.
 struct AccountMenu: View {
     @Environment(AppState.self) private var app
+    @Environment(AccountManager.self) private var accounts
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Avatar(name: app.account?.name ?? "?", size: 32, fill: Theme.accent, image: app.avatarImage)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(app.account?.name ?? "Not synced yet").textStyle(.bodySemibold).foregroundStyle(Theme.textPrimary).lineLimit(1)
-                    Text(app.account?.email ?? "").textStyle(.small).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            ForEach(Array(accounts.emails.enumerated()), id: \.element) { i, email in
+                AccountRow(name: email == accounts.activeEmail ? app.account?.name ?? accounts.name(of: email) : accounts.name(of: email),
+                           email: email,
+                           image: email == accounts.activeEmail ? app.avatarImage : accounts.avatar(of: email),
+                           hint: i < 9 ? "⌘\(i + 1)" : nil,
+                           isActive: email == accounts.activeEmail) {
+                    app.isAccountMenuOpen = false
+                    accounts.switchTo(email)
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 48)
+            MenuItem(title: "Add account…", icon: "plus") {
+                app.isAccountMenuOpen = false
+                Task {
+                    do { try await accounts.addAccount() } catch { app.show(Toast("Couldn't add the account: \(SignInView.describe(error))")) }
+                }
+            }
             separator
             MenuItem(title: "Settings…", icon: "gearshape", hint: shortcut("misc.settings")) { open(.account) }
             MenuItem(title: "Keyboard shortcuts", icon: "keyboard", hint: shortcut("misc.shortcuts")) { open(.shortcuts) }
@@ -30,12 +38,13 @@ struct AccountMenu: View {
                 MenuItem(title: theme.title, icon: theme.icon, isChecked: app.theme == theme) { app.theme = theme }
             }
             separator
-            MenuItem(title: "Sign out", icon: "rectangle.portrait.and.arrow.right", tint: Theme.textRed) {
-                Task { await app.signOut() }
+            MenuItem(title: "Sign out of \(accounts.activeEmail ?? "account")", icon: "rectangle.portrait.and.arrow.right", tint: Theme.textRed) {
+                app.isAccountMenuOpen = false
+                Task { await accounts.signOut() }
             }
         }
         .padding(.vertical, 6)
-        .frame(width: 260)
+        .frame(width: 300)
         .background(Theme.elevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .elevation(.l3, radius: 8)
     }
@@ -51,6 +60,42 @@ struct AccountMenu: View {
     private func open(_ page: SettingsPage) {
         app.isAccountMenuOpen = false
         app.settings = page
+    }
+}
+
+/// An account in the switcher: photo or letter, name over email, ⌘-number, check on the open one.
+private struct AccountRow: View {
+    let name: String
+    let email: String
+    let image: NSImage?
+    let hint: String?
+    let isActive: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Avatar(name: name, size: 28, fill: Theme.accent, image: image)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(name).textStyle(.bodySemibold).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                    Text(email).textStyle(.small).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 8)
+                if isActive {
+                    Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.iconPrimary)
+                } else if let hint {
+                    Text(hint).textStyle(.small).foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 44)
+            .background(hovering ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+        .onLiveHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
     }
 }
 

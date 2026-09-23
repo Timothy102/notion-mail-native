@@ -98,6 +98,7 @@ struct SettingsView: View {
 /// Settings → Account: who is signed in, and sign out.
 private struct AccountSettings: View {
     @Environment(AppState.self) private var app
+    @Environment(AccountManager.self) private var accounts
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -118,7 +119,7 @@ private struct AccountSettings: View {
             }
             Hairline().padding(.vertical, 8)
             SettingsRow(title: "Sign out", detail: "Signs out of Google and removes this account's mail from this Mac") {
-                Button("Sign out") { Task { await app.signOut() } }
+                Button("Sign out") { Task { await accounts.signOut() } }
                     .buttonStyle(MailButtonStyle(kind: .destructive))
                     .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
             }

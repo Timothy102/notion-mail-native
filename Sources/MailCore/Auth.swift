@@ -27,8 +27,9 @@ struct OAuthClient: Decodable {
 
 public enum AuthError: Error { case noCode, badResponse(String) }
 
+/// One Google account's tokens. The refresh token lives in Secrets under `refresh_token.<email>`;
+/// the access token is cached here.
 public actor Auth {
-    public static let shared = Auth()
     static let scopes = [
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.compose",
@@ -37,21 +38,33 @@ public actor Auth {
         "https://www.googleapis.com/auth/userinfo.profile",
     ]
 
+    /// nil for an account being added: sign-in learns it from Gmail's profile.
+    public private(set) var email: String?
     private var accessToken: String?
     private var expiry = Date.distantPast
 
-    public var isSignedIn: Bool { Secrets.get("refresh_token") != nil }
+    public init(email: String?) {
+        self.email = email
+    }
 
-    /// A valid access token; `refresh` skips the cached one (after a 401).
+    public static func tokenKey(_ email: String) -> String { "refresh_token.\(email)" }
+
+    /// A valid access token; `refresh` skips the cached one (after a 401). Without a refresh token
+    /// (revoked, or never signed in) this runs the consent flow again.
     public func token(refresh: Bool = false) async throws -> String {
         if !refresh, let accessToken, expiry > .now.addingTimeInterval(60) { return accessToken }
-        guard let refresh = Secrets.get("refresh_token") else { return try await signIn() }
+        guard let email, let refresh = Secrets.get(Self.tokenKey(email)) else {
+            try await signIn()
+            return accessToken!
+        }
         let client = try OAuthClient.load()
         return try await exchange(client.credentials.merging([
             "refresh_token": refresh, "grant_type": "refresh_token",
-        ]) { $1 })
+        ]) { $1 }).access
     }
 
+    /// Google's consent flow, then Gmail's profile to learn which account signed in. Returns its email.
+    @discardableResult
     public func signIn() async throws -> String {
         let client = try OAuthClient.load()
         let verifier = Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64URL
@@ -75,8 +88,9 @@ public actor Auth {
             .init(name: "code_challenge", value: challenge),
             .init(name: "code_challenge_method", value: "S256"),
             .init(name: "access_type", value: "offline"),
-            .init(name: "prompt", value: "consent"),
-        ]
+            // The account chooser, so adding a second account doesn't silently reuse the browser's current one.
+            .init(name: "prompt", value: "select_account consent"),
+        ] + (email.map { [.init(name: "login_hint", value: $0)] } ?? [])
         let code: String
         if let loopbackCode {
             await MainActor.run { _ = NSWorkspace.shared.open(auth.url!) }
@@ -85,18 +99,22 @@ public actor Auth {
             code = try await WebAuth.code(from: auth.url!, scheme: client.reversedClientScheme)
         }
 
-        return try await exchange(client.credentials.merging([
+        let token = try await exchange(client.credentials.merging([
             "code": code, "code_verifier": verifier,
             "redirect_uri": redirect, "grant_type": "authorization_code",
         ]) { $1 })
+        let access = token.access
+        let signedIn = try await GmailClient(token: { _ in access }).profile().emailAddress
+        if let email, email.caseInsensitiveCompare(signedIn) != .orderedSame {
+            throw AuthError.badResponse("You signed in as \(signedIn), but this is \(email)'s inbox. Sign in with \(email).")
+        }
+        guard let refresh = token.refresh else { throw AuthError.badResponse("Google didn't return a refresh token.") }
+        try Secrets.set(Self.tokenKey(signedIn), refresh)
+        email = signedIn
+        return signedIn
     }
 
-    public func signOut() {
-        Secrets.delete("refresh_token")
-        accessToken = nil
-    }
-
-    private func exchange(_ form: [String: String]) async throws -> String {
+    private func exchange(_ form: [String: String]) async throws -> (access: String, refresh: String?) {
         var req = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -104,15 +122,15 @@ public actor Auth {
             .joined(separator: "&").data(using: .utf8)
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-            if form["grant_type"] == "refresh_token" { Secrets.delete("refresh_token") }
+            if form["grant_type"] == "refresh_token", let email { Secrets.delete(Self.tokenKey(email)) }
             throw AuthError.badResponse(String(decoding: data, as: UTF8.self))
         }
         struct Token: Decodable { let access_token: String; let expires_in: Double; let refresh_token: String? }
         let t = try JSONDecoder().decode(Token.self, from: data)
-        if let r = t.refresh_token { try Secrets.set("refresh_token", r) }
+        if let r = t.refresh_token, let email, form["grant_type"] == "refresh_token" { try Secrets.set(Self.tokenKey(email), r) }
         accessToken = t.access_token
         expiry = .now.addingTimeInterval(t.expires_in)
-        return t.access_token
+        return (t.access_token, t.refresh_token)
     }
 }
 
