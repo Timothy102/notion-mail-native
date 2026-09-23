@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     let page: SettingsPage
     @Environment(AppState.self) private var app
+    @AppStorage(MessageBody.loadRemoteKey) private var loadRemoteImages = true
 
     var body: some View {
         ZStack {
@@ -84,6 +85,10 @@ struct SettingsView: View {
                 }
             }
             .padding(.top, 12)
+            Hairline().padding(.top, 24).padding(.bottom, 8)
+            SettingsRow(title: "Load remote images automatically", detail: "Off: images from the web stay hidden until you allow them per message or sender") {
+                Toggle("", isOn: $loadRemoteImages).toggleStyle(SettingsSwitch()).labelsHidden()
+            }
         case .integrations: IntegrationsSettings()
         case .shortcuts: ShortcutsSettings().padding(.top, 8)
         }

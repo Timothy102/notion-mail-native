@@ -286,6 +286,7 @@ private struct MessageView: View {
     @Environment(AppState.self) private var app
     @State private var showImagesOnce = false
     @State private var allowedSender = false
+    @AppStorage(MessageBody.loadRemoteKey) private var loadRemote = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -339,13 +340,13 @@ private struct MessageView: View {
         VStack(alignment: .leading, spacing: 12) {
             if let html, !html.isEmpty {
                 let remote = MailHTML.hasRemoteContent(html)
-                let allow = showImagesOnce || allowedSender
-                let parts = Quote.split(html: html)
+                let allow = loadRemote || showImagesOnce || allowedSender
+                let parts = Quote.split(html: app.isDemo ? Fixtures.offlineImages(html) : html)
                 let mailto: (EmailAddress) -> Void = { to in app.compose = ComposeRequest(.new(to: [to])) }
                 if remote, !allow { imagesBanner }
-                MessageBody(html: parts.new, attachments: attachments, allowRemote: remote && allow, onMailto: mailto)
+                MessageBody(html: parts.new, attachments: attachments, allowRemote: remote && allow, gmail: app.gmail, onMailto: mailto)
                 if let quoted = parts.quoted {
-                    QuotedHistory(html: quoted, attachments: attachments, allowRemote: remote && allow, onMailto: mailto)
+                    QuotedHistory(html: quoted, attachments: attachments, allowRemote: remote && allow, gmail: app.gmail, onMailto: mailto)
                 }
             } else {
                 let parts = Quote.split(text: message.bodyText)
