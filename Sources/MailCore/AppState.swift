@@ -36,12 +36,12 @@ public final class AppState {
     /// nil in demo mode: nothing touches the network.
     public let gmail: GmailClient?
     public var isDemo: Bool { gmail == nil }
+    /// This account's cached Google photo.
+    public let avatarURL: URL?
 
     public var account: Account?
     /// Google profile photo; nil shows the letter avatar.
     public var avatarImage: NSImage?
-    /// nil until the Keychain has been checked; demo mode is always signed in.
-    public var isSignedIn: Bool?
     public var syncStatus: SyncStatus = .idle
     /// Until the first backfill completes an empty list means "not synced yet", not "no mail".
     public var isAwaitingFirstSync = false
@@ -76,14 +76,14 @@ public final class AppState {
     static let themeKey = "appearance.theme"
     public private(set) var toast: Toast?
 
-    public init(store: Store, gmail: GmailClient?) {
+    public init(store: Store, gmail: GmailClient?, avatarURL: URL? = nil) {
         self.store = store
         self.gmail = gmail
+        self.avatarURL = avatarURL
         actions = MailActions(store: store, gmail: gmail)
         account = try? store.db.read(Store.account)
-        if gmail != nil { avatarImage = NSImage(contentsOf: ProfilePhoto.url) }
-        if gmail == nil { isSignedIn = true }
-        else { theme = UserDefaults.standard.string(forKey: Self.themeKey).flatMap(ThemePreference.init(rawValue:)) ?? .system }
+        avatarImage = avatarURL.flatMap(NSImage.init(contentsOf:))
+        if gmail != nil { theme = UserDefaults.standard.string(forKey: Self.themeKey).flatMap(ThemePreference.init(rawValue:)) ?? .system }
         actions.onToast = { [weak self] in self?.show($0) }
         registerCoreCommands()
         registerIntegrationCommands()

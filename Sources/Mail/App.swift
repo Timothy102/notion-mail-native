@@ -4,7 +4,7 @@ import SwiftUI
 
 @main
 struct MailApp: App {
-    @State private var app = AppState.launch()
+    @State private var accounts = AccountManager.launch()
     @NSApplicationDelegateAdaptor private var delegate: SnapshotLauncher
 
     init() {
@@ -14,7 +14,7 @@ struct MailApp: App {
     var body: some Scene {
         Window("Mail", id: "main") {
             RootView()
-                .environment(app)
+                .environment(accounts)
                 .frame(minWidth: Theme.Metrics.windowMin.width, minHeight: Theme.Metrics.windowMin.height)
         }
         .windowStyle(.hiddenTitleBar)
@@ -46,21 +46,18 @@ enum Launch {
     }
 }
 
-extension AppState {
-    static func launch() -> AppState {
+extension AccountManager {
+    /// Demo mode signs in one fixture account; `signin` shows none and `account-switcher` all three.
+    static func launch() -> AccountManager {
+        let manager = Launch.isDemo
+            ? AccountManager(demo: Fixtures.accounts, signedIn: ["signin": 0, "account-switcher": Fixtures.accounts.count][Launch.screen] ?? 1)
+            : AccountManager(storage: .default)
+        manager.configure = { app in if let theme = Launch.theme { app.theme = theme } }
         do {
-            let app: AppState
-            if Launch.isDemo {
-                let store = try Store()
-                try Fixtures.seed(store)
-                app = AppState(store: store, gmail: nil)
-            } else {
-                app = AppState(store: try Store(path: Store.defaultPath), gmail: GmailClient())
-            }
-            if let theme = Launch.theme { app.theme = theme }
-            return app
+            try manager.start()
         } catch {
             fatalError("Couldn't open the mail database: \(error)")
         }
+        return manager
     }
 }

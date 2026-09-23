@@ -4,29 +4,26 @@ import SwiftUI
 
 /// Window shell (SPEC §4.1). Owns layout and layering only; every region is a feature view.
 struct RootView: View {
-    @Environment(AppState.self) private var app
+    @Environment(AccountManager.self) private var accounts
     @State private var keys = KeyRouter()
 
     var body: some View {
         Group {
-            if app.isSignedIn == true {
+            if let app = accounts.app {
+                // A new identity per account: every view's @State (list observers, open layers) starts over.
                 Shell()
-                    .onAppear {
-                        keys.install(app)
-                        app.startSync()
-                    }
-            } else if app.isSignedIn == false {
-                SignInView { app.isSignedIn = true }
+                    .environment(app)
+                    .id(ObjectIdentifier(app))
+                    .onAppear { keys.install(app) }
             } else {
-                Theme.page
+                SignInView()
             }
         }
         .background(WindowAccessor { window in
             configure(window)
-            if Launch.snapshotPath != nil { Snapshot.run(app, window: window) }
+            if Launch.snapshotPath != nil { Snapshot.run(accounts, window: window) }
         })
-        .onChange(of: app.theme, initial: true) { NSApp.appearance = app.theme.appearance }
-        .task { if app.isSignedIn == nil { app.isSignedIn = await Auth.shared.isSignedIn } }
+        .onChange(of: accounts.app?.theme ?? Launch.theme ?? .system, initial: true) { _, theme in NSApp.appearance = theme.appearance }
     }
 
     private func configure(_ window: NSWindow) {
@@ -145,7 +142,7 @@ private struct ContentPane: View {
 }
 
 struct SignInView: View {
-    let onSignedIn: () -> Void
+    @Environment(AccountManager.self) private var accounts
     @State private var error: String?
     @State private var busy = false
 
@@ -199,16 +196,15 @@ struct SignInView: View {
         error = nil
         Task {
             do {
-                _ = try await Auth.shared.signIn()
+                try await accounts.addAccount()
                 NSApp.activate()
-                onSignedIn()
             }
             catch { self.error = Self.describe(error) }
             busy = false
         }
     }
 
-    private static func describe(_ error: Error) -> String {
+    static func describe(_ error: Error) -> String {
         if case AuthError.badResponse(let body) = error { return body }
         if (error as NSError).domain == "com.apple.AuthenticationServices.WebAuthenticationSession" { return "The Google sign-in window was closed." }
         return error.localizedDescription

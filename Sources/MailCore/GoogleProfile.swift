@@ -17,12 +17,6 @@ public struct GoogleUserinfo: Decodable, Sendable {
     }
 }
 
-/// The signed-in account's Google photo, cached beside the database.
-public enum ProfilePhoto {
-    public static let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appending(path: "Mail/avatar.png")
-}
-
 extension Sync {
     static let googleNameKey = "googleProfileName"
     static let googlePictureKey = "googleProfilePicture"
@@ -39,15 +33,15 @@ extension Sync {
                 try store.save(account: account)
                 await onAccount(account)
             }
-            guard let picture = info.picture,
-                  picture != (try store.get(Self.googlePictureKey)) || !FileManager.default.fileExists(atPath: ProfilePhoto.url.path),
+            guard let avatarURL, let picture = info.picture,
+                  picture != (try store.get(Self.googlePictureKey)) || !FileManager.default.fileExists(atPath: avatarURL.path),
                   let sized = GoogleUserinfo.sizedPicture(picture) else { return }
             let (data, resp) = try await URLSession.shared.data(from: sized)
             guard (resp as? HTTPURLResponse)?.statusCode == 200,
                   let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:])
             else { throw GmailError.http(status: (resp as? HTTPURLResponse)?.statusCode ?? 0, body: "profile photo") }
-            try FileManager.default.createDirectory(at: ProfilePhoto.url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try png.write(to: ProfilePhoto.url, options: .atomic)
+            try FileManager.default.createDirectory(at: avatarURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try png.write(to: avatarURL, options: .atomic)
             try store.set(Self.googlePictureKey, picture)
             await onAvatar(png)
         } catch {

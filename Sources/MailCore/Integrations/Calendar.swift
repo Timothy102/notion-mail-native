@@ -197,7 +197,7 @@ public enum ICS {
 public struct GoogleCalendarClient: Sendable {
     private let token: @Sendable (_ refresh: Bool) async throws -> String
 
-    public init(token: @escaping @Sendable (_ refresh: Bool) async throws -> String = { try await Auth.shared.token(refresh: $0) }) {
+    public init(token: @escaping @Sendable (_ refresh: Bool) async throws -> String) {
         self.token = token
     }
 

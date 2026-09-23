@@ -8,11 +8,11 @@ import SwiftUI
 enum Snapshot {
     private static var started = false
 
-    static func run(_ app: AppState, window: NSWindow) {
+    static func run(_ accounts: AccountManager, window: NSWindow) {
         guard !started, let path = Launch.snapshotPath else { return }
         started = true
         place(window)
-        prepare(app, screen: Launch.screen)
+        if let app = accounts.app { prepare(app, screen: Launch.screen) }
         if Launch.screen == "calendar" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { scrollToEnd(window, rightmost: false) }
         }
@@ -79,7 +79,6 @@ enum Snapshot {
                 ComposeModel.snapshotShowsQuoted = true
                 app.commands.run("thread.replyAll")
             }
-        case "signin": app.isSignedIn = false
         case "compose": app.compose = ComposeRequest(.new(to: []))
         case "compose-draft":
             if let draft = (try? app.store.db.read(Store.drafts))?.first { app.compose = ComposeRequest(.draft(id: draft.id)) }
@@ -93,7 +92,7 @@ enum Snapshot {
         case "settings-account": app.settings = .account
         case "settings-appearance": app.settings = .appearance
         case "settings-shortcuts": app.settings = .shortcuts
-        case "account-menu": app.isAccountMenuOpen = true
+        case "account-menu", "account-switcher": app.isAccountMenuOpen = true
         case "account-menu-photo", "settings-account-photo":
             app.avatarImage = Bundle.appResources.url(forResource: "avatar-placeholder", withExtension: "png", subdirectory: "Art").flatMap(NSImage.init(contentsOf:))
             if screen == "account-menu-photo" { app.isAccountMenuOpen = true } else { app.settings = .account }
@@ -177,12 +176,12 @@ final class SnapshotLauncher: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard Launch.snapshotPath != nil else { return }
-        let app = AppState.launch()
+        let accounts = AccountManager.launch()
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: Launch.windowSize),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
-        window.contentView = NSHostingView(rootView: RootView().environment(app))
+        window.contentView = NSHostingView(rootView: RootView().environment(accounts))
         window.orderFrontRegardless()
         self.window = window
     }
