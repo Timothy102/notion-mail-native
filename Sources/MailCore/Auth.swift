@@ -108,7 +108,7 @@ public actor Auth {
         }
         struct Token: Decodable { let access_token: String; let expires_in: Double; let refresh_token: String? }
         let t = try JSONDecoder().decode(Token.self, from: data)
-        if let r = t.refresh_token { Keychain.set("refresh_token", r) }
+        if let r = t.refresh_token { try Keychain.set("refresh_token", r) }
         accessToken = t.access_token
         expiry = .now.addingTimeInterval(t.expires_in)
         return t.access_token
@@ -146,25 +146,33 @@ final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
 
 // One-shot HTTP listener on 127.0.0.1 that captures Google's ?code= redirect.
 enum Loopback {
+    /// Serves 127.0.0.1 until a request carries Google's `code` or `error`. Browser preconnects,
+    /// favicon fetches and other stray requests get a 404 and are ignored.
     static func start() async throws -> (UInt16, Task<String, Error>) {
         let listener = try NWListener(using: .tcp, on: .any)
         let (portStream, portCont) = AsyncStream<UInt16>.makeStream()
         let code = Task<String, Error> {
             try await withCheckedThrowingContinuation { cont in
+                var done = false
                 listener.newConnectionHandler = { conn in
                     conn.start(queue: .main)
                     conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, _, _ in
-                        let line = String(decoding: data ?? Data(), as: UTF8.self)
-                            .split(separator: "\r\n").first ?? ""
+                        let line = String(decoding: data ?? Data(), as: UTF8.self).split(separator: "\r\n").first ?? ""
                         let path = line.split(separator: " ").dropFirst().first.map(String.init) ?? ""
-                        let value = URLComponents(string: path)?.queryItems?.first { $0.name == "code" }?.value
-                        let body = value == nil ? "Sign-in failed." : "Signed in. You can close this tab."
-                        let resp = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n\(body)"
-                        conn.send(content: Data(resp.utf8), completion: .contentProcessed { _ in
-                            conn.cancel()
+                        let items = URLComponents(string: path)?.queryItems ?? []
+                        let value = items.first { $0.name == "code" }?.value
+                        let failure = items.first { $0.name == "error" }?.value
+                        guard !done, value != nil || failure != nil else {
+                            reply(conn, status: "404 Not Found", body: "")
+                            return
+                        }
+                        done = true
+                        reply(conn, status: "200 OK", body: value != nil
+                              ? "Signed in to NMail. You can close this tab."
+                              : "Sign-in was cancelled (\(failure!)). You can close this tab and try again from NMail.") {
                             listener.cancel()
-                        })
-                        if let value { cont.resume(returning: value) } else { cont.resume(throwing: AuthError.noCode) }
+                        }
+                        if let value { cont.resume(returning: value) } else { cont.resume(throwing: AuthError.badResponse("Google returned: \(failure!)")) }
                     }
                 }
             }
@@ -173,6 +181,14 @@ enum Loopback {
         listener.start(queue: .main)
         for await port in portStream { return (port, code) }
         throw AuthError.noCode
+    }
+
+    private static func reply(_ conn: NWConnection, status: String, body: String, then: (@Sendable () -> Void)? = nil) {
+        let resp = "HTTP/1.1 \(status)\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+        conn.send(content: Data(resp.utf8), completion: .contentProcessed { _ in
+            conn.cancel()
+            then?()
+        })
     }
 }
 
@@ -187,11 +203,14 @@ public enum Keychain {
         return String(decoding: d, as: UTF8.self)
     }
 
-    public static func set(_ key: String, _ value: String) {
+    public static func set(_ key: String, _ value: String) throws {
         delete(key)
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: key, kSecValueData as String: Data(value.utf8)]
-        SecItemAdd(q as CFDictionary, nil)
+        let status = SecItemAdd(q as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw AuthError.badResponse("Couldn't save the login to the Keychain (\(SecCopyErrorMessageString(status, nil) as String? ?? "\(status)")).")
+        }
     }
 
     public static func delete(_ key: String) {

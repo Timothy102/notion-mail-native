@@ -94,7 +94,7 @@ struct IntegrationsSettings: View {
     private func verify(_ client: NotionClient, saving value: String? = nil) async {
         do {
             workspace = try await client.workspaceName()
-            if let value { Keychain.set(NotionClient.tokenKey, value) }
+            if let value { try? Keychain.set(NotionClient.tokenKey, value) }
             token = ""
             state = .connected
         } catch {

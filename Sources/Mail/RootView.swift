@@ -198,7 +198,11 @@ struct SignInView: View {
         busy = true
         error = nil
         Task {
-            do { _ = try await Auth.shared.signIn(); onSignedIn() }
+            do {
+                _ = try await Auth.shared.signIn()
+                NSApp.activate()
+                onSignedIn()
+            }
             catch { self.error = Self.describe(error) }
             busy = false
         }
