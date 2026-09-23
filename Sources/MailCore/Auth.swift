@@ -1,4 +1,5 @@
 import AppKit
+import AuthenticationServices
 import CryptoKit
 import Foundation
 import Network
@@ -8,10 +9,14 @@ struct OAuthClient: Decodable {
     let client_id: String
     let client_secret: String?
 
-    // Newer Desktop clients are downloaded without a secret; PKCE covers them.
     var credentials: [String: String] { ["client_id": client_id, "client_secret": client_secret].compactMapValues { $0 } }
 
-    // Google's "Desktop app" credentials JSON, downloaded from Cloud Console.
+    /// Desktop clients carry a secret and redirect to loopback; iOS/macOS clients (no secret) only accept
+    /// their reversed client ID as a custom-scheme redirect.
+    var usesLoopback: Bool { client_secret != nil }
+    var reversedClientScheme: String { client_id.split(separator: ".").reversed().joined(separator: ".") }
+
+    // The client's credentials JSON, downloaded from Cloud Console.
     static func load() throws -> OAuthClient {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: ".config/mail/client_secret.json")
@@ -51,8 +56,15 @@ public actor Auth {
         let verifier = Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64URL
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URL
 
-        let (port, code) = try await Loopback.start()
-        let redirect = "http://127.0.0.1:\(port)"
+        let redirect: String
+        var loopbackCode: Task<String, Error>?
+        if client.usesLoopback {
+            let (port, code) = try await Loopback.start()
+            redirect = "http://127.0.0.1:\(port)"
+            loopbackCode = code
+        } else {
+            redirect = "\(client.reversedClientScheme):/oauth2redirect"
+        }
         var auth = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
         auth.queryItems = [
             .init(name: "client_id", value: client.client_id),
@@ -64,10 +76,16 @@ public actor Auth {
             .init(name: "access_type", value: "offline"),
             .init(name: "prompt", value: "consent"),
         ]
-        await MainActor.run { _ = NSWorkspace.shared.open(auth.url!) }
+        let code: String
+        if let loopbackCode {
+            await MainActor.run { _ = NSWorkspace.shared.open(auth.url!) }
+            code = try await loopbackCode.value
+        } else {
+            code = try await WebAuth.code(from: auth.url!, scheme: client.reversedClientScheme)
+        }
 
         return try await exchange(client.credentials.merging([
-            "code": try await code.value, "code_verifier": verifier,
+            "code": code, "code_verifier": verifier,
             "redirect_uri": redirect, "grant_type": "authorization_code",
         ]) { $1 })
     }
@@ -94,6 +112,35 @@ public actor Auth {
         accessToken = t.access_token
         expiry = .now.addingTimeInterval(t.expires_in)
         return t.access_token
+    }
+}
+
+/// Runs Google's consent page in an ASWebAuthenticationSession and returns the ?code= from the custom-scheme callback.
+@MainActor
+final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private static var current: WebAuth?
+    private var session: ASWebAuthenticationSession?
+
+    static func code(from url: URL, scheme: String) async throws -> String {
+        let auth = WebAuth()
+        current = auth
+        defer { current = nil }
+        let callback: URL = try await withCheckedThrowingContinuation { cont in
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { url, error in
+                if let url { cont.resume(returning: url) } else { cont.resume(throwing: error ?? AuthError.noCode) }
+            }
+            session.presentationContextProvider = auth
+            session.prefersEphemeralWebBrowserSession = false
+            auth.session = session
+            session.start()
+        }
+        guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "code" })?.value
+        else { throw AuthError.noCode }
+        return code
+    }
+
+    nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        MainActor.assumeIsolated { NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor() }
     }
 }
 
