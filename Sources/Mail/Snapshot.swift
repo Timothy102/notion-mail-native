@@ -29,6 +29,11 @@ enum Snapshot {
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
             if let thread = inbox.first(where: { $0.messageCount >= 5 }) ?? inbox.first { app.open(thread.id) }
         case "compose": app.compose = ComposeRequest(.new(to: []))
+        case "compose-draft":
+            if let draft = (try? app.store.db.read(Store.drafts))?.first { app.compose = ComposeRequest(.draft(id: draft.id)) }
+        case "reply":
+            prepare(app, screen: "thread")
+            app.commands.run("thread.replyAll")
         case "palette": app.palette = .commands
         case "search": app.search("offsite")
         case "empty": app.go(to: .spam)

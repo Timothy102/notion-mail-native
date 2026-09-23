@@ -6,7 +6,6 @@ import SwiftUI
 struct SettingsView: View {
     let page: SettingsPage
     @Environment(AppState.self) private var app
-    @State private var sendAs = Live<[SendAs]>([])
 
     var body: some View {
         ZStack {
@@ -30,7 +29,6 @@ struct SettingsView: View {
             .elevation(.l4, radius: Theme.Metrics.radiusLarge)
             .padding(40)
         }
-        .onAppear { sendAs.observe(app.store) { try Store.sendAs($0) } }
     }
 
     private var nav: some View {
@@ -74,17 +72,7 @@ struct SettingsView: View {
                 .fixedSize()
             }
         case .signature:
-            ForEach(sendAs.value) { identity in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(identity.address.formatted).textStyle(.bodyMedium)
-                    Text(MIME.plainText(fromHTML: identity.signature))
-                        .textStyle(.mailBody)
-                        .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-                        .padding(12)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
-                }
-                .padding(.top, 16)
-            }
+            SignatureSettings().padding(.top, 8)
         case .integrations:
             SettingsRow(title: "Notion", detail: "Save threads to a database and link them to pages") { EmptyView() }
             SettingsRow(title: "Google Calendar", detail: "Show today's events in the sidebar") { EmptyView() }
