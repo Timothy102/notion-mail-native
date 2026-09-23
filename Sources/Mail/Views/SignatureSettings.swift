@@ -1,8 +1,9 @@
 import MailCore
 import SwiftUI
 
-/// Settings → Signature (§4.9): the reply toggle, a per-alias picker and a plain editor. "Save"
-/// keeps the signature on this Mac; only "Save to Gmail" changes the sendAs signature in Gmail.
+/// Settings → Signature (§4.9): the reply toggle, a per-alias picker, a raw HTML editor and a live
+/// preview. "Save" keeps the signature on this Mac; only "Save to Gmail" changes the sendAs
+/// signature in Gmail.
 struct SignatureSettings: View {
     @Environment(AppState.self) private var app
     @State private var identities = Live<[SendAs]>([])
@@ -19,7 +20,7 @@ struct SignatureSettings: View {
 
     private var selected: SendAs? { identities.value.first { $0.email == selectedEmail } ?? identities.value.first }
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var gmailText: String { MIME.plainText(fromHTML: selected?.signature ?? "") }
+    private var gmailHTML: String { (selected?.signature ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,12 +32,22 @@ struct SignatureSettings: View {
                     SettingsPopUp(selection: $selectedEmail, options: identities.value.map(\.email)) { $0 }
                 }
             }
-            MailTextView(text: $text, placeholder: "Add a signature…")
+            caption("HTML").padding(.top, 16)
+            MailTextView(text: $text, placeholder: #"Add a signature… Links: <a href="https://…">text</a>"#)
                 .padding(12)
-                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
                 .background(Theme.page.opacity(0.001))
                 .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
-                .padding(.top, 16)
+                .padding(.top, 6)
+            caption("Preview").padding(.top, 12)
+            Text(Self.attributed(Signature.render(trimmed)))
+                .textStyle(.body)
+                .tint(Theme.accent)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(12)
+                .background(Theme.wash, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous))
+                .padding(.top, 6)
             HStack(spacing: 8) {
                 Text(stateText)
                     .textStyle(.small)
@@ -48,10 +59,10 @@ struct SignatureSettings: View {
                     .disabled(trimmed == original)
                 Button("Save to Gmail", action: pushToGmail)
                     .buttonStyle(.primary)
-                    .disabled(trimmed == gmailText || state == .pushing || selected == nil)
+                    .disabled(trimmed == gmailHTML || state == .pushing || selected == nil)
             }
             .padding(.top, 12)
-            Text("Mail signs new messages and replies with this text. Your Gmail signature only changes when you choose Save to Gmail.")
+            Text("Mail signs new messages and replies with this signature. Your Gmail signature only changes when you choose Save to Gmail.")
                 .textStyle(.small)
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -67,6 +78,20 @@ struct SignatureSettings: View {
         .onChange(of: signOnReplies) { app.outbox.signOnReplies = signOnReplies }
     }
 
+    private func caption(_ title: String) -> some View {
+        Text(title).textStyle(.small).foregroundStyle(Theme.textTertiary)
+    }
+
+    static func attributed(_ rendered: Signature.Rendered) -> AttributedString {
+        var out = AttributedString(rendered.text)
+        for link in rendered.links {
+            guard let range = Range(link.range, in: rendered.text), let lower = AttributedString.Index(range.lowerBound, within: out),
+                  let upper = AttributedString.Index(range.upperBound, within: out) else { continue }
+            out[lower..<upper].link = link.url
+        }
+        return out
+    }
+
     private var stateText: String {
         switch state {
         case .idle: trimmed == original ? "" : "Unsaved changes"
@@ -78,7 +103,7 @@ struct SignatureSettings: View {
     }
 
     private func load() {
-        original = (try? app.store.db.read { try Signature.text(for: selected, db: $0) }) ?? ""
+        original = (try? app.store.db.read { try Signature.html(for: selected, db: $0) }) ?? ""
         text = original
         state = .idle
     }
@@ -100,7 +125,7 @@ struct SignatureSettings: View {
         state = .pushing
         Task {
             do {
-                try await app.outbox.updateSignature(identity, text: saving)
+                try await app.outbox.updateSignature(identity, html: saving)
                 original = saving
                 state = .pushed
             } catch {

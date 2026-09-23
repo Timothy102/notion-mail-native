@@ -56,7 +56,7 @@ final class ComposeModel {
     var identity: SendAs? { identities.first { $0.email.lowercased() == draft.from.email.lowercased() } }
 
     func choose(_ identity: SendAs) {
-        draft.switchIdentity(to: identity, signature: (try? app?.store.db.read { try Signature.text(for: identity, db: $0) }) ?? "")
+        draft.switchIdentity(to: identity, signature: (try? app?.store.db.read { try Signature.html(for: identity, db: $0) }) ?? "")
     }
 
     func switchMode(_ mode: ComposeDraft.Mode) {
@@ -85,12 +85,8 @@ final class ComposeModel {
             do {
                 let saved = try await app.outbox.saveDraft(snapshot)
                 guard let self else { return }
-                draft.draftId = saved.draftId
-                draft.draftMessageId = saved.draftMessageId
-                draft.threadId = saved.threadId
-                for a in saved.attachments where a.data != nil {
-                    if let i = draft.attachments.firstIndex(where: { $0.id == a.id && $0.data == nil }) { draft.attachments[i].data = a.data }
-                }
+                guard saved.sessionId == draft.sessionId else { return }
+                draft.adopt(saved)
                 lastSaved = saved
                 status = .saved
             } catch {
@@ -883,8 +879,9 @@ private struct SuggestionMenu: View {
 
 // MARK: - Body text view
 
-/// Plain-text editor on NSTextView: 14/24 mail body, grey "-- " delimiter lines, a
-/// placeholder while nothing but the signature is there, and a height that follows the text.
+/// Plain-text editor on NSTextView: 14/24 mail body, grey "-- " delimiter lines, signature links
+/// in the accent colour, a placeholder while nothing but the signature is there, and a height that
+/// follows the text. `signature` is the signature HTML whose text ends `text`.
 struct MailTextView: NSViewRepresentable {
     @Binding var text: String
     var placeholder = ""
@@ -908,6 +905,7 @@ struct MailTextView: NSViewRepresentable {
         view.isHorizontallyResizable = false
         view.isVerticallyResizable = true
         view.selectedTextAttributes = [.backgroundColor: NSColor(Theme.textSelection)]
+        view.linkTextAttributes = [.foregroundColor: NSColor(Theme.accent), .cursor: NSCursor.pointingHand]
         view.typingAttributes = BodyTextView.baseAttributes
         view.placeholder = placeholder
         view.signature = signature
@@ -931,7 +929,10 @@ struct MailTextView: NSViewRepresentable {
     func updateNSView(_ view: BodyTextView, context: Context) {
         context.coordinator.parent = self
         view.placeholder = placeholder
-        view.signature = signature
+        if view.signature != signature {
+            view.signature = signature
+            view.restyle()
+        }
         if view.string != text {
             view.string = text
             view.restyle()
@@ -966,8 +967,10 @@ final class BodyTextView: NSTextView {
         didSet { if placeholder != oldValue { needsDisplay = true } }
     }
     var signature = "" {
-        didSet { if signature != oldValue { needsDisplay = true } }
+        didSet { if signature != oldValue { rendered = Signature.render(signature) } }
     }
+    private var rendered = Signature.render("")
+    private var hoveredLink: NSRange?
 
     static var baseAttributes: [NSAttributedString.Key: Any] {
         let style = TextStyle.mailBody
@@ -979,7 +982,16 @@ final class BodyTextView: NSTextView {
                 .baselineOffset: (style.lineHeight - (font.ascender - font.descender)) / 2]
     }
 
-    /// Everything in the body style, with signature delimiter lines in textTertiary.
+    /// The signature's links, located in the signature block at the end of the text.
+    private var signatureLinks: [(range: NSRange, url: URL)] {
+        guard !rendered.text.isEmpty else { return [] }
+        let block = (string as NSString).range(of: ComposeDraft.signatureBlock(rendered.text), options: .backwards)
+        guard block.location != NSNotFound else { return [] }
+        let start = block.location + block.length - (rendered.text as NSString).length
+        return rendered.links.map { (NSRange(location: start + $0.range.location, length: $0.range.length), $0.url) }
+    }
+
+    /// Everything in the body style, signature links linked, delimiter lines in textTertiary.
     func restyle() {
         guard let storage = textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
@@ -991,14 +1003,16 @@ final class BodyTextView: NSTextView {
                 storage.addAttribute(.foregroundColor, value: NSColor(Theme.textTertiary), range: range)
             }
         }
+        for link in signatureLinks { storage.addAttribute(.link, value: link.url, range: link.range) }
         storage.endEditing()
+        setHoveredLink(nil)
         typingAttributes = Self.baseAttributes
         needsDisplay = true
     }
 
     private var showsPlaceholder: Bool {
         guard !placeholder.isEmpty else { return false }
-        let typed = signature.isEmpty ? string : string.replacingOccurrences(of: ComposeDraft.signatureBlock(signature), with: "")
+        let typed = rendered.text.isEmpty ? string : string.replacingOccurrences(of: ComposeDraft.signatureBlock(rendered.text), with: "")
         return typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -1008,6 +1022,32 @@ final class BodyTextView: NSTextView {
         var attributes = Self.baseAttributes
         attributes[.foregroundColor] = NSColor(Theme.placeholder)
         (placeholder as NSString).draw(at: .zero, withAttributes: attributes)
+    }
+
+    // MARK: Link hover underline
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas where area.owner === self && area.options.contains(.mouseMoved) { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
+        setHoveredLink(signatureLinks.first { NSLocationInRange(index, $0.range) && index < NSMaxRange($0.range) }?.range)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        setHoveredLink(nil)
+    }
+
+    private func setHoveredLink(_ range: NSRange?) {
+        guard range != hoveredLink, let layout = layoutManager else { return }
+        if let old = hoveredLink, NSMaxRange(old) <= (string as NSString).length { layout.removeTemporaryAttribute(.underlineStyle, forCharacterRange: old) }
+        if let range { layout.addTemporaryAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, forCharacterRange: range) }
+        hoveredLink = range
     }
 
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
