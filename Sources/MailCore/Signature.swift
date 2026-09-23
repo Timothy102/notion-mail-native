@@ -5,7 +5,8 @@ import GRDB
 /// stay local; Gmail's copy only changes through `Outbox.updateSignature`, when the user asks for it.
 public enum Signature {
     /// Tim's sign-off; the primary address uses it until a local edit replaces it.
-    public static let defaultHTML = #"My kindest, Tim<br><br><a href="https://www.linkedin.com/in/timc9">LinkedIn</a>, <a href="https://cal.com/timcvetko">Cal.com</a>"#
+    /// Tim's Notion Mail signature, markup as Notion Mail sent it (italic lines, grey hairline-underlined links).
+    public static let defaultHTML = #"<div class="signature"><p><em>My kindest,</em></p><p><em>Tim</em></p><p><br></p><p><a class="custom-editor-link-class" href="https://www.linkedin.com/in/timc9" style="color: rgb(120, 119, 116);"><em>LinkedIn</em></a><em>, </em><a class="custom-editor-link-class" href="https://cal.com/timcvetko" style="color: rgb(120, 119, 116);"><em>Cal.com</em></a></p></div>"#
 
     /// v2 keys hold HTML; the old `signature.local.` plain-text keys are ignored.
     static func localKey(_ email: String) -> String { "signature.html.\(email.lowercased())" }

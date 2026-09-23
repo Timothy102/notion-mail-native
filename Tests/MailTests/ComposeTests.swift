@@ -27,7 +27,7 @@ final class ComposeTests: XCTestCase {
         XCTAssertEqual(d.threadId, m.threadId)
         XCTAssertEqual(d.to.map(\.email), [m.sender.email])
         XCTAssertFalse(d.cc.contains { $0.email == Fixtures.me.email })
-        XCTAssertEqual(d.body, "\n\nMy kindest, Tim\n\nLinkedIn, Cal.com")
+        XCTAssertEqual(d.body, "\n\nMy kindest,\nTim\n\nLinkedIn, Cal.com")
         XCTAssertTrue(d.subject.hasPrefix("Re:"))
         XCTAssertTrue(d.isPristine)
 
@@ -60,7 +60,7 @@ final class ComposeTests: XCTestCase {
         XCTAssertEqual(try app.store.db.read { try Signature.html(for: helio, db: $0) }, "Cheers,<br>Tim")
         XCTAssertTrue(try app.store.db.read(Store.sendAs)[1].signature.contains("Founder, Helio"), "local save must not touch the Gmail copy")
         let d = try app.store.db.read { try ComposeDraft.make(.new(to: []), db: $0, fallbackFrom: Fixtures.me, signOnReplies: true) }
-        XCTAssertEqual(d.body, "\n\nMy kindest, Tim\n\nLinkedIn, Cal.com")
+        XCTAssertEqual(d.body, "\n\nMy kindest,\nTim\n\nLinkedIn, Cal.com")
     }
 
     func testSwitchingModeAndIdentityKeepsTypedText() throws {
@@ -133,10 +133,10 @@ final class ComposeTests: XCTestCase {
 
     func testSignatureRendersTextAndLinks() {
         let r = Signature.render(Signature.defaultHTML)
-        XCTAssertEqual(r.text, "My kindest, Tim\n\nLinkedIn, Cal.com")
+        XCTAssertEqual(r.text, "My kindest,\nTim\n\nLinkedIn, Cal.com")
         XCTAssertEqual(r.links.map { (r.text as NSString).substring(with: $0.range) }, ["LinkedIn", "Cal.com"])
         XCTAssertEqual(r.links.map(\.url.absoluteString), ["https://www.linkedin.com/in/timc9", "https://cal.com/timcvetko"])
-        XCTAssertEqual(r.textWithURLs, "My kindest, Tim\n\nLinkedIn (https://www.linkedin.com/in/timc9), Cal.com (https://cal.com/timcvetko)")
+        XCTAssertEqual(r.textWithURLs, "My kindest,\nTim\n\nLinkedIn (https://www.linkedin.com/in/timc9), Cal.com (https://cal.com/timcvetko)")
     }
 
     func testNewMessageIsAlternativeWithSignatureLinks() throws {
@@ -144,17 +144,19 @@ final class ComposeTests: XCTestCase {
         var d = try app.store.db.read { try ComposeDraft.make(.new(to: [EmailAddress(name: nil, email: "ana@example.com")]), db: $0, fallbackFrom: Fixtures.me, signOnReplies: true) }
         d.body = "Hi <Ana> & co\nSecond line" + d.body
         let out = d.outgoing()
-        XCTAssertEqual(out.text, "Hi <Ana> & co\nSecond line\n\nMy kindest, Tim\n\nLinkedIn (https://www.linkedin.com/in/timc9), Cal.com (https://cal.com/timcvetko)")
+        XCTAssertEqual(out.text, "Hi <Ana> & co\nSecond line\n\nMy kindest,\nTim\n\nLinkedIn (https://www.linkedin.com/in/timc9), Cal.com (https://cal.com/timcvetko)")
         let html = try XCTUnwrap(out.html)
-        XCTAssertTrue(html.contains("Hi &lt;Ana&gt; &amp; co<br>Second line<br><br>My kindest, Tim"), html)
-        XCTAssertTrue(html.contains(#"<a href="https://www.linkedin.com/in/timc9">LinkedIn</a>"#))
-        XCTAssertTrue(html.contains(#"<a href="https://cal.com/timcvetko">Cal.com</a>"#))
+        XCTAssertTrue(html.hasPrefix("<style>"), "Notion Mail's stylesheet leads the HTML part")
+        XCTAssertTrue(html.contains(#"<p dir="auto">Hi &lt;Ana&gt; &amp; co</p><p dir="auto">Second line</p><p dir="auto">\#u{200B}</p><div class="signature">"#), html)
+        XCTAssertTrue(html.contains(#"href="https://www.linkedin.com/in/timc9" style="color: rgb(120, 119, 116);"><em>LinkedIn</em></a>"#))
+        XCTAssertTrue(html.contains(#"href="https://cal.com/timcvetko" style="color: rgb(120, 119, 116);"><em>Cal.com</em></a>"#))
 
         let raw = String(decoding: MIME.build(out), as: UTF8.self)
         XCTAssertTrue(raw.contains("multipart/alternative"))
         XCTAssertTrue(raw.contains("Content-Type: text/plain"))
         XCTAssertTrue(raw.contains("LinkedIn (https://www.linkedin.com/in/timc9)"))
-        XCTAssertTrue(raw.contains(#"<a href="https://cal.com/timcvetko">Cal.com</a>"#))
+        let sentHTML = try XCTUnwrap(MIME.extract(MIME.parse(MIME.build(out))).html)
+        XCTAssertTrue(sentHTML.contains(#"href="https://cal.com/timcvetko""#))
     }
 
     func testReplyHTMLHasSignatureAboveGmailQuote() throws {
@@ -167,7 +169,7 @@ final class ComposeTests: XCTestCase {
         XCTAssertTrue(raw.contains("multipart/alternative"))
         let body = MIME.extract(parsed)
         let html = try XCTUnwrap(body.html)
-        let link = try XCTUnwrap(html.range(of: #"<a href="https://www.linkedin.com/in/timc9">LinkedIn</a>"#))
+        let link = try XCTUnwrap(html.range(of: #"href="https://www.linkedin.com/in/timc9""#))
         let quote = try XCTUnwrap(html.range(of: "gmail_quote"))
         XCTAssertLessThan(link.lowerBound, quote.lowerBound)
         XCTAssertTrue(body.text.contains("LinkedIn (https://www.linkedin.com/in/timc9)"))

@@ -128,18 +128,32 @@ public struct ComposeDraft: Sendable, Hashable {
         from = identity.address
     }
 
+    /// Notion Mail's outgoing stylesheet, so mail from NMail reads in Gmail exactly like mail Notion Mail sent.
+    static let notionStyle = #"<style>*{-webkit-font-smoothing:antialiased;line-height:1.3;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}p{margin:0px 0px 0px 0px !important;min-height:19.5px;}a.custom-editor-link-class{color:rgba(120,119,116,1);cursor:pointer;text-decoration-thickness:0.05em;text-underline-offset:3px;}</style>"#
+
+    /// One `<p dir="auto">` per line like Notion Mail; empty lines hold a zero-width space so Gmail keeps their height.
+    static func notionParagraphs(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .newlines)
+        guard !trimmed.trimmingCharacters(in: .whitespaces).isEmpty else { return "" }
+        return trimmed.components(separatedBy: "\n").map { line in
+            "<p dir=\"auto\">" + (line.isEmpty ? "\u{200B}" : MIME.htmlEscape(line)) + "</p>"
+        }.joined()
+    }
+
     /// multipart/alternative: the text part spells out signature links as "LinkedIn (https://…)",
-    /// the HTML part carries the signature HTML itself. Quotes are appended by `MIME.build`.
+    /// the HTML part is Notion Mail's shape (its stylesheet, paragraph per line, signature HTML).
+    /// Quotes are appended by `MIME.build`.
     public func outgoing() -> OutgoingMessage {
-        func html(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : Quote.html(fromText: text) }
         let split = signatureSplit
         let text = split.map { $0.before + Self.signatureBlock(Signature.render(signature).textWithURLs) + $0.after } ?? body
+        let gap = "<p dir=\"auto\">\u{200B}</p>"
         let bodyHTML = split.map { s in
-            let typed = html(s.before)
-            return (typed.isEmpty ? "" : typed + "<br>") + signature + (html(s.after).isEmpty ? "" : "<br>" + html(s.after))
-        } ?? html(body)
+            let typed = Self.notionParagraphs(s.before)
+            let after = Self.notionParagraphs(s.after)
+            return (typed.isEmpty ? "" : typed + gap) + signature + (after.isEmpty ? "" : gap + after)
+        } ?? Self.notionParagraphs(body)
         var out = OutgoingMessage(
-            from: from, to: to, cc: cc, bcc: bcc, subject: subject, text: text, html: "<div dir=\"ltr\">" + bodyHTML + "</div>", quoted: quoted,
+            from: from, to: to, cc: cc, bcc: bcc, subject: subject, text: text, html: Self.notionStyle + bodyHTML, quoted: quoted,
             inReplyTo: inReplyTo, references: references, threadId: threadId,
             attachments: attachments.compactMap { a in a.data.map { OutgoingAttachment(filename: a.filename, mimeType: a.mimeType, data: $0) } }
         )
