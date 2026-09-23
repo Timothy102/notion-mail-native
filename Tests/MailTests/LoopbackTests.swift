@@ -23,6 +23,15 @@ final class LoopbackTests: XCTestCase {
         XCTAssertEqual(value, "4/abc")
     }
 
+    /// The app calls this from inside the Auth actor, where a deferred handler never got attached in time.
+    func testWorksWhenStartedFromAnActor() async throws {
+        actor Caller { func start() async throws -> (UInt16, Task<String, Error>) { try await Loopback.start() } }
+        let (port, code) = try await Caller().start()
+        _ = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/?code=xyz")!)
+        let value = try await code.value
+        XCTAssertEqual(value, "xyz")
+    }
+
     func testGoogleErrorSurfaces() async throws {
         let (port, code) = try await Loopback.start()
         _ = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/?error=access_denied")!)

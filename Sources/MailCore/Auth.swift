@@ -150,37 +150,47 @@ enum Loopback {
     /// favicon fetches and other stray requests get a 404 and are ignored.
     static func start() async throws -> (UInt16, Task<String, Error>) {
         let listener = try NWListener(using: .tcp, on: .any)
-        let (portStream, portCont) = AsyncStream<UInt16>.makeStream()
-        let code = Task<String, Error> {
-            try await withCheckedThrowingContinuation { cont in
-                var done = false
-                listener.newConnectionHandler = { conn in
-                    conn.start(queue: .main)
-                    conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, _, _ in
-                        let line = String(decoding: data ?? Data(), as: UTF8.self).split(separator: "\r\n").first ?? ""
-                        let path = line.split(separator: " ").dropFirst().first.map(String.init) ?? ""
-                        let items = URLComponents(string: path)?.queryItems ?? []
-                        let value = items.first { $0.name == "code" }?.value
-                        let failure = items.first { $0.name == "error" }?.value
-                        guard !done, value != nil || failure != nil else {
-                            reply(conn, status: "404 Not Found", body: "")
-                            return
-                        }
-                        done = true
-                        reply(conn, status: "200 OK", body: value != nil
-                              ? "Signed in to NMail. You can close this tab."
-                              : "Sign-in was cancelled (\(failure!)). You can close this tab and try again from NMail.") {
-                            listener.cancel()
-                        }
-                        if let value { cont.resume(returning: value) } else { cont.resume(throwing: AuthError.badResponse("Google returned: \(failure!)")) }
-                    }
+        let (ports, portCont) = AsyncStream<UInt16>.makeStream()
+        let (codes, codeCont) = AsyncThrowingStream<String, Error>.makeStream()
+        // Both handlers are attached before start(): a listener started without one fails immediately.
+        listener.newConnectionHandler = { conn in
+            conn.start(queue: .main)
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, _, _ in
+                let line = String(decoding: data ?? Data(), as: UTF8.self).split(separator: "\r\n").first ?? ""
+                let path = line.split(separator: " ").dropFirst().first.map(String.init) ?? ""
+                let items = URLComponents(string: path)?.queryItems ?? []
+                let value = items.first { $0.name == "code" }?.value
+                let failure = items.first { $0.name == "error" }?.value
+                guard value != nil || failure != nil else {
+                    reply(conn, status: "404 Not Found", body: "")
+                    return
                 }
+                reply(conn, status: "200 OK", body: value != nil
+                      ? "Signed in to NMail. You can close this tab."
+                      : "Sign-in was cancelled (\(failure!)). You can close this tab and try again from NMail.") {
+                    listener.cancel()
+                }
+                if let value { codeCont.yield(value); codeCont.finish() } else { codeCont.finish(throwing: AuthError.badResponse("Google returned: \(failure!)")) }
             }
         }
-        listener.stateUpdateHandler = { if case .ready = $0 { portCont.yield(listener.port!.rawValue); portCont.finish() } }
+        listener.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                portCont.yield(listener.port!.rawValue)
+                portCont.finish()
+            case .failed(let error):
+                portCont.finish()
+                codeCont.finish(throwing: error)
+            default: break
+            }
+        }
         listener.start(queue: .main)
-        for await port in portStream { return (port, code) }
-        throw AuthError.noCode
+        guard let port = await ports.first(where: { _ in true }) else { throw AuthError.badResponse("Couldn't open a local port for Google's sign-in redirect.") }
+        let code = Task<String, Error> {
+            for try await value in codes { return value }
+            throw AuthError.noCode
+        }
+        return (port, code)
     }
 
     private static func reply(_ conn: NWConnection, status: String, body: String, then: (@Sendable () -> Void)? = nil) {
