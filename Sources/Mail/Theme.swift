@@ -8,7 +8,7 @@ enum Theme {
     static let wash = Color(0xF7F7F5, dark: 0x202020)
     static let elevated = Color(0xFFFFFF, dark: 0x252525)
     static let darkSurface = Color(0x1D1B16, dark: 0x252525)
-    static let scrim = Color(0x000000, 0.56, dark: 0x000000, 0.56)
+    static let scrim = Color(0x000000, 0.61, dark: 0x000000, 0.56)
 
     // MARK: Text
     static let textPrimary = Color(0x1D1B16, dark: 0xD3D3D3)
@@ -16,6 +16,8 @@ enum Theme {
     static let textSecondary = Color(0x5F5E5B, dark: 0x9B9B9B)
     static let textTertiary = Color(0x91918E, dark: 0x7F7F7F)
     static let textQuaternary = Color(0xACABA9, dark: 0xFFFFFF, 0.13)
+    /// Placeholders and "Add label": textQuaternary in light, but legible on dark `elevated`.
+    static let placeholder = Color(0xACABA9, dark: 0xFFFFFF, 0.283)
     static let textContrast = Color(0xFFFFFF, dark: 0xFFFFFF)
     static let textContrastSecondary = Color(0xD3D3D3, dark: 0xD3D3D3)
     static let textBlue = Color(0x2383E2, dark: 0x2383E2)
@@ -37,7 +39,7 @@ enum Theme {
     static let rowHover = Color(0x000000, 0.05, dark: 0xFFFFFF, 0.055)
     static let rowSelected = Color(0x2383E2, 0.14, dark: 0x2383E2, 0.14)
     static let rowSelectedHover = Color(0x2383E2, 0.21, dark: 0x2383E2, 0.21)
-    static let markBackground = Color(0xE7F3F8, dark: 0x1B1F22)
+    static let markBackground = Color(0xE7F3F8, dark: 0x1B2E41)
     static let skeleton = Color(0xF1F1EF, dark: 0x373737)
     static let textSelection = Color(0x2383E2, 0.28, dark: 0x2383E2, 0.28)
 
@@ -55,6 +57,8 @@ enum Theme {
         static let sidebarMinWidth: CGFloat = 220
         static let sidebarMaxWidth: CGFloat = 480
         static let titleBarHeight: CGFloat = 40
+        static let trafficLightCentresX: [CGFloat] = [21, 41, 61]
+        static let trafficLightCentreY: CGFloat = 24
         static let sidebarItemHeight: CGFloat = 30
         static let sidebarItemPitch: CGFloat = 32
         static let sidebarItemInset: CGFloat = 8
@@ -280,10 +284,15 @@ enum Elevation: Sendable {
             let layers = level.layers(scheme)
             let near = layers[0]
             let far = layers.count > 1 ? layers[1] : Layer(y: 0, blur: 0, alpha: 0)
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
             content
-                .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Theme.elevationRing, lineWidth: 1))
-                .shadow(color: .black.opacity(near.alpha), radius: near.blur / 2, y: near.y)
-                .shadow(color: .black.opacity(far.alpha), radius: far.blur / 2, y: far.y)
+                .background {
+                    ZStack {
+                        shape.fill(Theme.elevated).shadow(color: .black.opacity(far.alpha), radius: far.blur / 2, y: far.y)
+                        shape.fill(Theme.elevated).shadow(color: .black.opacity(near.alpha), radius: near.blur / 2, y: near.y)
+                    }
+                }
+                .overlay(shape.inset(by: -1).strokeBorder(Theme.elevationRing, lineWidth: 1))
         }
     }
 }

@@ -255,10 +255,11 @@ struct Composer: View {
                 if model.showsBcc {
                     RecipientField(addresses: $model.draft.bcc, contacts: model.contacts, prefix: "Bcc", focus: $focus, field: .bcc).zIndex(1)
                 }
-                TextField("", text: $model.draft.subject, prompt: Text("Subject").foregroundStyle(Theme.textQuaternary))
+                TextField("", text: $model.draft.subject)
                     .textFieldStyle(.plain)
                     .textStyle(.body)
                     .focused($focus, equals: .subject)
+                    .placeholder("Subject", showing: model.draft.subject.isEmpty)
                     .frame(maxWidth: .infinity, minHeight: Theme.Metrics.composerFieldHeight, alignment: .leading)
             }
             .padding(.leading, 16)
@@ -268,7 +269,7 @@ struct Composer: View {
             .zIndex(1)
             Hairline()
             ScrollView {
-                ComposeBody(model: model, placeholder: "Write a message…", focusOnAppear: false)
+                ComposeBody(model: model, placeholder: "Write, or press '/' for commands…", focusOnAppear: false)
                     .padding(16)
             }
             .scrollIndicators(.automatic)
@@ -547,12 +548,80 @@ private struct ComposeFooter: View {
             Spacer(minLength: 8)
             HStack(spacing: 4) {
                 IconButton(systemName: "paperclip", help: "Attach files") { model.pickFiles() }
+                SnippetMenu(model: model)
+                EventMenu(model: model)
                 IconButton(systemName: "trash", help: "Discard draft") { model.discard() }
             }
             .padding(.trailing, -6)
         }
         .padding(.horizontal, 16)
         .frame(height: Theme.Metrics.composerFooterHeight)
+    }
+}
+
+/// Saved text blocks: insert one, or save what was typed as a new one. Stored locally.
+private struct SnippetMenu: View {
+    let model: ComposeModel
+    @Environment(AppState.self) private var app
+    private static let key = "snippets"
+
+    var body: some View {
+        let snippets = stored
+        MenuButton(systemName: "curlybraces", help: "Snippets") {
+            ForEach(snippets, id: \.self) { snippet in
+                Button(Self.title(snippet)) { model.draft.insert(snippet) }
+            }
+            if snippets.isEmpty { Text("No snippets yet") }
+            Divider()
+            Button("Save message as snippet") { save(snippets + [model.draft.typedText]) }
+                .disabled(model.draft.typedText.isEmpty || snippets.contains(model.draft.typedText))
+            if !snippets.isEmpty {
+                Menu("Delete snippet") {
+                    ForEach(snippets, id: \.self) { snippet in
+                        Button(Self.title(snippet)) { save(snippets.filter { $0 != snippet }) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var stored: [String] {
+        (try? app.store.get(Self.key)).flatMap { $0 }.flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) } ?? []
+    }
+
+    private func save(_ snippets: [String]) {
+        try? app.store.set(Self.key, (try? JSONEncoder().encode(snippets)).map { String(decoding: $0, as: UTF8.self) })
+    }
+
+    private static func title(_ snippet: String) -> String {
+        let line = snippet.split(separator: "\n").first.map(String.init) ?? snippet
+        return line.count > 40 ? line.prefix(40) + "…" : line
+    }
+}
+
+/// Upcoming calendar events; picking one writes its title, time and place into the body.
+private struct EventMenu: View {
+    let model: ComposeModel
+    @Environment(AppState.self) private var app
+    @State private var feed: CalendarFeed?
+
+    var body: some View {
+        MenuButton(systemName: "calendar", help: "Insert event") {
+            let events = feed?.days().flatMap(\.events) ?? []
+            ForEach(events) { event in
+                Button("\(event.title) · \(EventTime.range(event))") { model.draft.insert(Self.text(event)) }
+            }
+            if events.isEmpty { Text(feed?.status == .loading ? "Loading events…" : "No upcoming events") }
+        }
+        .task {
+            let feed = CalendarFeed(client: app.isDemo ? nil : GoogleCalendarClient())
+            self.feed = feed
+            await feed.refresh()
+        }
+    }
+
+    private static func text(_ event: CalendarEvent) -> String {
+        [event.title, EventTime.range(event), event.location].compactMap { $0 }.joined(separator: "\n")
     }
 }
 
@@ -591,7 +660,7 @@ private struct SendButton: View {
         }
         .frame(width: Theme.Metrics.sendButtonWidth, height: Theme.Metrics.buttonSmall)
         .background(hovering ? Theme.accentHover : Theme.accent, in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous))
-        .onHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
+        .onLiveHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
     }
 }
 
@@ -692,9 +761,10 @@ struct RecipientField: View {
                     RecipientChip(address: address) { addresses.remove(at: i) }
                         .frame(height: Theme.Metrics.composerFieldHeight)
                 }
-                TextField("", text: $input, prompt: Text(addresses.isEmpty ? placeholder : "").foregroundStyle(Theme.textQuaternary))
+                TextField("", text: $input)
                     .textFieldStyle(.plain)
                     .textStyle(.body)
+                    .placeholder(placeholder, showing: addresses.isEmpty && input.isEmpty)
                     .focused(focus, equals: field)
                     .frame(height: Theme.Metrics.composerFieldHeight)
                     .onSubmit(commitOrPick)
@@ -943,7 +1013,7 @@ final class BodyTextView: NSTextView {
         super.draw(dirtyRect)
         guard showsPlaceholder else { return }
         var attributes = Self.baseAttributes
-        attributes[.foregroundColor] = NSColor(Theme.textQuaternary)
+        attributes[.foregroundColor] = NSColor(Theme.placeholder)
         (placeholder as NSString).draw(at: .zero, withAttributes: attributes)
     }
 

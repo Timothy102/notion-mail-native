@@ -72,6 +72,19 @@ final class StoreTests: XCTestCase {
     }
 
     @MainActor
+    func testRemindArchivesThenReturnsUnread() throws {
+        let app = AppState(store: try seeded(), gmail: nil)
+        let thread = try XCTUnwrap(app.store.db.read { try Store.threads($0, in: .inbox).first { !$0.isUnread } })
+        let inInbox = { try app.store.db.read { try Store.threads($0, in: .inbox) }.first { $0.id == thread.id } }
+        app.actions.remind([thread.id], at: .now.addingTimeInterval(3_600))
+        XCTAssertNil(try inInbox())
+        app.actions.wakeDueReminders()
+        XCTAssertNil(try inInbox(), "not due yet")
+        app.actions.wakeDueReminders(now: .now.addingTimeInterval(7_200))
+        XCTAssertEqual(try inInbox()?.isUnread, true)
+    }
+
+    @MainActor
     func testOpenMarksRead() throws {
         let app = AppState(store: try seeded(), gmail: nil)
         let unread = try XCTUnwrap(app.store.db.read { try Store.threads($0, in: .inbox).first(where: \.isUnread) })
@@ -92,6 +105,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(MailDate.group(now.addingTimeInterval(-120 * 86_400), now: now, calendar: cal), "May")
         XCTAssertEqual(MailDate.group(now.addingTimeInterval(-300 * 86_400), now: now, calendar: cal), "Nov 2025")
         XCTAssertEqual(MailDate.list(now.addingTimeInterval(-300 * 86_400), now: now, calendar: cal), "Nov 25, 2025")
+        XCTAssertFalse(MailDate.list(now.addingTimeInterval(-60), now: now, calendar: cal).contains("\u{202F}"), "normal space before AM/PM")
     }
 
     func testGmailLabelColorMapping() {

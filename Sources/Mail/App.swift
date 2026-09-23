@@ -7,7 +7,7 @@ struct MailApp: App {
     @State private var app = AppState.launch()
 
     init() {
-        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.setActivationPolicy(Launch.snapshotPath == nil ? .regular : .prohibited)
     }
 
     var body: some Scene {
@@ -17,6 +17,7 @@ struct MailApp: App {
                 .frame(minWidth: Theme.Metrics.windowMin.width, minHeight: Theme.Metrics.windowMin.height)
         }
         .windowStyle(.hiddenTitleBar)
+        .windowLevel(Launch.snapshotPath == nil ? .automatic : .desktop)
         .defaultSize(Launch.windowSize)
         .commands {
             CommandGroup(replacing: .newItem) {}

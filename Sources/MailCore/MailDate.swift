@@ -12,7 +12,7 @@ public enum MailDate {
         } else {
             style = .dateTime.month(.abbreviated).day().year()
         }
-        return date.formatted(style.locale(calendar.locale ?? .current))
+        return date.formatted(style.locale(calendar.locale ?? .current)).replacingOccurrences(of: "\u{202F}", with: " ")
     }
 
     /// Date-group title: nil for today, then "Yesterday", "Last 7 days", "Last 30 days",
@@ -31,5 +31,13 @@ public enum MailDate {
             }
             return date.formatted(.dateTime.month(.abbreviated).year().locale(locale))
         }
+    }
+
+    /// Remind-me choices (SPEC §5.2): in three hours, tomorrow at 9, next Monday at 9.
+    public static func reminderOptions(now: Date = .now, calendar: Calendar = .current) -> [(title: String, date: Date)] {
+        let laterToday = calendar.date(byAdding: .hour, value: 3, to: now) ?? now
+        let tomorrow = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: calendar.date(byAdding: .day, value: 1, to: now) ?? now) ?? now
+        let monday = calendar.nextDate(after: now, matching: DateComponents(hour: 9, minute: 0, weekday: 2), matchingPolicy: .nextTime) ?? now
+        return [("Later today", laterToday), ("Tomorrow", tomorrow), ("Next week", monday)]
     }
 }

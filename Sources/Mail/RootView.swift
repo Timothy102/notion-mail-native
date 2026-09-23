@@ -36,6 +36,7 @@ struct RootView: View {
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = false
         window.backgroundColor = NSColor(Theme.page)
+        TrafficLights.install(window)
     }
 }
 
@@ -91,6 +92,12 @@ private struct Shell: View {
             .animation(Theme.Motion.fast, value: app.settings)
         }
         .ignoresSafeArea()
+        .task {
+            while !Task.isCancelled {
+                app.actions.wakeDueReminders()
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
         .background(Theme.page)
         .foregroundStyle(Theme.textPrimary)
         .tint(Theme.accent)
@@ -174,6 +181,34 @@ extension ThemePreference {
         case .system: nil
         case .light: NSAppearance(named: .aqua)
         case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
+/// Keeps the window buttons at SPEC §3 positions. AppKit lays them out again on resize and key
+/// changes, so each button's frame change puts it back.
+@MainActor
+private enum TrafficLights {
+    private static let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+    private static var installed: Set<ObjectIdentifier> = []
+
+    static func install(_ window: NSWindow) {
+        place(window)
+        guard installed.insert(ObjectIdentifier(window)).inserted else { return }
+        for button in types.compactMap(window.standardWindowButton) {
+            button.postsFrameChangedNotifications = true
+            NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: button, queue: .main) { [weak window] _ in
+                MainActor.assumeIsolated { if let window { place(window) } }
+            }
+        }
+    }
+
+    private static func place(_ window: NSWindow) {
+        for (type, centreX) in zip(types, Theme.Metrics.trafficLightCentresX) {
+            guard let button = window.standardWindowButton(type), let bar = button.superview else { continue }
+            let centreY = bar.isFlipped ? Theme.Metrics.trafficLightCentreY : bar.bounds.height - Theme.Metrics.trafficLightCentreY
+            let origin = NSPoint(x: centreX - button.frame.width / 2, y: centreY - button.frame.height / 2)
+            if button.frame.origin != origin { button.setFrameOrigin(origin) }
         }
     }
 }

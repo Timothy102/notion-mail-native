@@ -13,8 +13,8 @@ struct Sidebar: View {
             accountRow
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    SidebarItem(title: "Search", icon: { SlotIcon(systemName: "magnifyingglass") }) { app.palette = .search }
-                    section("Views")
+                    SidebarItem(title: "Search", isSelected: app.searchQuery != nil, icon: { SlotIcon(systemName: "magnifyingglass") }) { app.palette = .search }
+                    section("Views", top: 15)
                     mailbox(.inbox, tint: Theme.inboxRed)
                     mailbox(.starred)
                     section("Mail")
@@ -34,9 +34,15 @@ struct Sidebar: View {
                     }
                     CalendarPanel()
                 }
-                .padding(.bottom, 12)
+                .padding(.bottom, Self.scrollFade)
             }
-            .scrollIndicators(.never)
+            .scrollIndicators(.automatic)
+            .mask {
+                VStack(spacing: 0) {
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: Self.scrollFade)
+                }
+            }
             footer
         }
         .onAppear {
@@ -66,13 +72,16 @@ struct Sidebar: View {
         .frame(height: 44)
     }
 
-    private func section(_ title: String) -> some View {
+    /// Content that continues under the footer fades out; at the end of the list only padding fades.
+    private static let scrollFade: CGFloat = 20
+
+    private func section(_ title: String, top: CGFloat = 12) -> some View {
         Text(title)
             .textStyle(.smallMedium)
             .foregroundStyle(Theme.textTertiary)
             .padding(.leading, 18)
             .frame(height: 30)
-            .padding(.top, 14)
+            .padding(.top, top)
     }
 
     private func mailbox(_ box: Mailbox, tint: Color = Theme.iconSecondary) -> some View {

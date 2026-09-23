@@ -76,6 +76,35 @@ public final class MailActions {
         apply(threadIds, add: ["TRASH"], remove: ["INBOX"], toast: threadIds.count == 1 ? "Moved to Trash" : "Moved \(threadIds.count) threads to Trash")
     }
 
+    static let remindersKey = "reminders"
+
+    /// Archives now; `wakeDueReminders` brings the threads back to the inbox, unread, at `date`.
+    public func remind(_ threadIds: [String], at date: Date) {
+        var due = reminders
+        for id in threadIds { due[id] = date }
+        saveReminders(due)
+        let when = date.formatted(.dateTime.weekday(.abbreviated).hour().minute()).replacingOccurrences(of: "\u{202F}", with: " ")
+        apply(threadIds, remove: ["INBOX"], toast: "Reminder set for \(when)")
+    }
+
+    public func wakeDueReminders(now: Date = .now) {
+        let all = reminders
+        let due = all.filter { $0.value <= now }.map(\.key)
+        guard !due.isEmpty else { return }
+        saveReminders(all.filter { $0.value > now })
+        apply(due.sorted(), add: ["INBOX", "UNREAD"], undoable: false)
+    }
+
+    private var reminders: [String: Date] {
+        (try? store.get(Self.remindersKey)).flatMap { $0 }
+            .flatMap { try? JSONDecoder().decode([String: Date].self, from: Data($0.utf8)) } ?? [:]
+    }
+
+    private func saveReminders(_ due: [String: Date]) {
+        let json = (try? JSONEncoder().encode(due)).map { String(decoding: $0, as: UTF8.self) }
+        try? store.set(Self.remindersKey, due.isEmpty ? nil : json)
+    }
+
     public func markSpam(_ threadIds: [String]) {
         apply(threadIds, add: ["SPAM"], remove: ["INBOX"], toast: "Marked as spam")
     }

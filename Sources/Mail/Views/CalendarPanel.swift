@@ -31,7 +31,7 @@ struct CalendarPanel: View {
         }
         .padding(.horizontal, 18)
         .frame(height: 30, alignment: .bottom)
-        .padding(.top, 14)
+        .padding(.top, 12)
         .padding(.bottom, 2)
     }
 
@@ -127,7 +127,7 @@ private struct CalendarEventRow: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, Theme.Metrics.sidebarItemInset)
-        .onHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
+        .onLiveHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
         .help(event.title + "\n" + EventTime.range(event))
     }
 

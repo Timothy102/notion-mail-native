@@ -43,7 +43,7 @@ enum MailHTML {
         let quote = css(Theme.border, dark: dark)
         var style = """
         html,body{margin:0;padding:0;overflow:hidden;background:transparent}
-        body{font:14px/1.71 -apple-system,system-ui,sans-serif;color:\(text);padding:0 4px;word-wrap:break-word;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
+        body{font:14px/1.71 -apple-system,system-ui,sans-serif;color:\(text);word-wrap:break-word;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
         p{margin:0}
         img{max-width:100%;height:auto}
         table{max-width:100%}

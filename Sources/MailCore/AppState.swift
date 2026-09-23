@@ -51,6 +51,8 @@ public final class AppState {
     public var focusedThreadId: String?
     public var selectedThreadIds: Set<String> = []
     public var openThreadId: String?
+    /// Message picked with n / p in the open thread; nil until then.
+    public var selectedMessageId: String?
 
     // Layers
     public var palette: PaletteMode?
@@ -98,6 +100,7 @@ public final class AppState {
     public func open(_ threadId: String) {
         openThreadId = threadId
         focusedThreadId = threadId
+        selectedMessageId = nil
         let unread = (try? store.db.read { try MailThread.fetchOne($0, key: threadId)?.isUnread }) ?? false
         if unread == true { actions.setRead([threadId], true, undoable: false) }
     }
@@ -113,6 +116,15 @@ public final class AppState {
         let next = current.map { min(max($0 + delta, 0), visibleThreadIds.count - 1) } ?? (delta > 0 ? 0 : visibleThreadIds.count - 1)
         let id = visibleThreadIds[next]
         if openThreadId != nil { open(id) } else { focusedThreadId = id }
+    }
+
+    /// n / p: selects the next or previous message of the open thread, starting from the newest.
+    public func moveMessageSelection(_ delta: Int) {
+        guard let threadId = openThreadId else { return }
+        let ids = (try? store.db.read { try Store.threadDetail($0, id: threadId)?.messages.filter { !$0.isDraft }.map(\.id) }).flatMap { $0 } ?? []
+        guard !ids.isEmpty else { return }
+        let current = selectedMessageId.flatMap(ids.firstIndex(of:)) ?? ids.count - (delta > 0 ? 2 : 0)
+        selectedMessageId = ids[min(max(current + delta, 0), ids.count - 1)]
     }
 
     public func toggleSelection(_ threadId: String) {

@@ -10,16 +10,15 @@ enum Snapshot {
     static func run(_ app: AppState, window: NSWindow) {
         guard !started, let path = Launch.snapshotPath else { return }
         started = true
-        window.setContentSize(Launch.windowSize)
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
+        place(window)
         prepare(app, screen: Launch.screen)
         if Launch.screen == "calendar" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { scrollSidebarToEnd(window) }
         }
         Task {
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(0.4))
+            place(window)
+            try? await Task.sleep(for: .seconds(1.1))
             let ok = capture(window, to: path)
             if !ok { FileHandle.standardError.write(Data("snapshot failed: \(path)\n".utf8)) }
             exit(ok ? 0 : 1)
@@ -31,6 +30,19 @@ enum Snapshot {
         case "thread":
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
             if let thread = inbox.first(where: { $0.messageCount >= 5 }) ?? inbox.first { app.open(thread.id) }
+        case "thread-selected":
+            prepare(app, screen: "thread")
+            app.moveMessageSelection(-1)
+            app.moveMessageSelection(-1)
+        case "thread-long":
+            let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
+            if let thread = inbox.max(by: { $0.subject.count < $1.subject.count }) { app.open(thread.id) }
+        case "palette-thread":
+            prepare(app, screen: "thread")
+            app.palette = .commands
+        case "search-loading":
+            SearchView.snapshotSearching = true
+            app.search(Launch.env["MAIL_QUERY"] ?? "from:ana has:drive")
         case "rows":
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
             if inbox.count > 6 {
@@ -58,7 +70,7 @@ enum Snapshot {
             prepare(app, screen: "thread")
             app.commands.run("thread.replyAll")
         case "palette": app.palette = Launch.env["MAIL_PALETTE"] == "search" ? .search : .commands
-        case "search": app.search(Launch.env["MAIL_QUERY"] ?? "offsite")
+        case "search": app.search(Launch.env["MAIL_QUERY"] ?? "helio")
         case "empty": app.go(to: .spam)
         case "settings": app.settings = .signature
         case "syncing":
@@ -78,6 +90,20 @@ enum Snapshot {
             if screen == "notion-link" { app.notionPicker = .link(threadId: thread.id) }
         default: break
         }
+    }
+
+    /// On the sharpest screen the window fits, never key (inactive chrome is expected). Runs again after launch
+    /// because SwiftUI may restore a saved frame on another display.
+    private static func place(_ window: NSWindow) {
+        window.setContentSize(Launch.windowSize)
+        let fitting = NSScreen.screens.filter { $0.visibleFrame.width >= window.frame.width && $0.visibleFrame.height >= window.frame.height }
+        if let screen = fitting.max(by: { $0.backingScaleFactor < $1.backingScaleFactor }) ?? NSScreen.main {
+            let area = screen.visibleFrame
+            window.setFrameOrigin(NSPoint(x: area.midX - window.frame.width / 2, y: max(area.minY, area.midY - window.frame.height / 2)))
+        }
+        // Below the desktop: invisible to whoever is using the Mac, yet screencapture -l still reads its backing store.
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+        window.orderFrontRegardless()
     }
 
     /// The sidebar is the leftmost scroll view; its Calendar section sits below the fold.

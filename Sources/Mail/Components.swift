@@ -23,7 +23,7 @@ struct MailButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .textStyle(kind == .primary ? .bodySemibold : kind == .outline ? .bodyMedium : .body)
+                .textStyle(kind == .primary ? .bodySemibold : .body)
                 .foregroundStyle(foreground)
                 .padding(.horizontal, height >= Theme.Metrics.buttonMedium ? 12 : 8)
                 .frame(height: height)
@@ -34,7 +34,7 @@ struct MailButtonStyle: ButtonStyle {
                 }
                 .contentShape(Rectangle())
                 .opacity(isEnabled ? 1 : 0.4)
-                .onHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h && isEnabled } }
+                .onLiveHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h && isEnabled } }
         }
 
         private var foreground: Color {
@@ -74,16 +74,21 @@ struct IconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: glyph * 0.875, weight: .regular))
+                .font(.glyph(glyph))
                 .foregroundStyle(isEnabled ? tint : Theme.iconTertiary)
                 .frame(width: Theme.Metrics.iconButton, height: Theme.Metrics.iconButton)
                 .background(hovering ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h && isEnabled } }
+        .onLiveHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h && isEnabled } }
         .help(help ?? "")
     }
+}
+
+extension Font {
+    /// SF Symbol sized so its ink fills a `glyph`-point icon box, at Notion's stroke weight.
+    static func glyph(_ glyph: CGFloat) -> Font { .system(size: (glyph * 0.94).rounded(), weight: .medium) }
 }
 
 // MARK: - Chips, avatars, keycaps
@@ -192,17 +197,20 @@ struct Hairline: View {
 struct EmptyState: View {
     var title: String
     var message: String
-    var symbol: String? = "tray"
+    /// The mailbox-and-dog drawing; errors show text only.
+    var art = true
     var retry: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
-            if let symbol {
-                Image(systemName: symbol)
-                    .font(.system(size: 44, weight: .ultraLight))
-                    .foregroundStyle(Theme.iconTertiary)
-                    .frame(height: 64)
-                    .padding(.bottom, 16)
+            if art {
+                ZStack {
+                    Self.layer("mailbox", Theme.textPrimary)
+                    Self.layer("dog-fill", Theme.page)
+                    Self.layer("dog", Theme.textPrimary)
+                }
+                .frame(width: 200, height: 130)
+                .padding(.bottom, 16)
             }
             Text(title).textStyle(.emptyTitle).foregroundStyle(Theme.textPrimary)
             Text(message)
@@ -218,6 +226,14 @@ struct EmptyState: View {
         }
         .padding(.top, 80)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+extension EmptyState {
+    /// One bundled 400 × 260 mask, tinted so the ink follows the theme.
+    private static func layer(_ name: String, _ color: Color) -> some View {
+        let image = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Art").flatMap(NSImage.init(contentsOf:))
+        return Image(nsImage: image ?? NSImage()).resizable().renderingMode(.template).foregroundStyle(color)
     }
 }
 
@@ -273,7 +289,7 @@ struct ToastHost: View {
         ZStack(alignment: .bottomLeading) {
             if let toast = app.toast {
                 ToastView(toast: toast)
-                    .onHover { hovering = $0 }
+                    .onLiveHover { hovering = $0 }
                     .task(id: "\(toast.id)\(hovering)") {
                         guard !hovering else { return }
                         try? await Task.sleep(for: toast.duration)
@@ -317,6 +333,18 @@ struct ToastView: View {
 // MARK: - Modifiers
 
 extension View {
+    /// Placeholder drawn by us, in `Theme.placeholder`, because a TextField prompt ignores foregroundStyle.
+    func placeholder(_ text: String, showing: Bool) -> some View {
+        overlay(alignment: .leading) {
+            if showing { Text(text).foregroundStyle(Theme.placeholder).lineLimit(1).allowsHitTesting(false) }
+        }
+    }
+
+    /// `onHover` that snapshots ignore, so a capture never depends on where the pointer is.
+    func onLiveHover(perform action: @escaping (Bool) -> Void) -> some View {
+        onHover { if Launch.snapshotPath == nil { action($0) } }
+    }
+
     /// Background that fades in on hover (100 ms) and out instantly (§6).
     func hoverFill(_ color: Color = Theme.hover, radius: CGFloat = Theme.Metrics.radius) -> some View {
         modifier(HoverFill(color: color, radius: radius))
@@ -331,7 +359,7 @@ private struct HoverFill: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(hovering ? color : .clear, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .onHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
+            .onLiveHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
     }
 }
 
@@ -372,7 +400,7 @@ struct SidebarItem<Icon: View>: View {
         .buttonStyle(.plain)
         .padding(.horizontal, Theme.Metrics.sidebarItemInset)
         .padding(.vertical, (Theme.Metrics.sidebarItemPitch - Theme.Metrics.sidebarItemHeight) / 2)
-        .onHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
+        .onLiveHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
     }
 
     private var background: Color {
@@ -380,13 +408,38 @@ struct SidebarItem<Icon: View>: View {
     }
 }
 
-/// A 16 pt outline SF Symbol in the icon slot.
+/// A 16 pt outline SF Symbol in the icon slot, or Notion's inbox tray for `InboxTray.symbol`.
 struct SlotIcon: View {
     let systemName: String
     var tint: Color = Theme.iconSecondary
 
     var body: some View {
-        Image(systemName: systemName).font(.system(size: 14, weight: .regular)).foregroundStyle(tint)
+        if systemName == InboxTray.symbol {
+            InboxTray().fill(tint, style: FillStyle(eoFill: true)).frame(width: 15, height: 15)
+        } else {
+            Image(systemName: systemName).font(.system(size: 14, weight: .regular)).foregroundStyle(tint)
+        }
+    }
+}
+
+/// Notion Mail's inbox glyph: a tray outline with a solid lip, traced from the 2x reference.
+struct InboxTray: Shape {
+    static let symbol = "notion.inbox"
+
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 15, sy = rect.height / 15
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * sx, y: rect.minY + y * sy) }
+        var path = Path()
+        path.addLines([p(1.4, 0), p(13.6, 0), p(15, 9.6), p(15, 15), p(0, 15), p(0, 9.6)])
+        path.closeSubpath()
+        path.move(to: p(2.9, 1.6))
+        path.addLine(to: p(12.1, 1.6))
+        path.addLine(to: p(13.3, 9.9))
+        path.addLine(to: p(9.5, 9.9))
+        path.addQuadCurve(to: p(5.5, 9.9), control: p(7.5, 12.6))
+        path.addLine(to: p(1.7, 9.9))
+        path.closeSubpath()
+        return path
     }
 }
 

@@ -7,7 +7,7 @@ let package = Package(
     dependencies: [.package(url: "https://github.com/groue/GRDB.swift", from: "7.9.0")],
     targets: [
         .target(name: "MailCore", dependencies: [.product(name: "GRDB", package: "GRDB.swift")]),
-        .executableTarget(name: "Mail", dependencies: ["MailCore", .product(name: "GRDB", package: "GRDB.swift")], resources: [.copy("Fonts")]),
+        .executableTarget(name: "Mail", dependencies: ["MailCore", .product(name: "GRDB", package: "GRDB.swift")], resources: [.copy("Fonts"), .copy("Art")]),
         .testTarget(name: "MailTests", dependencies: ["MailCore"], resources: [.copy("Fixtures")]),
     ]
 )

@@ -47,6 +47,10 @@ extension AppState {
                     isAvailable: { [unowned self] in hasTarget() && mailbox != .inbox }) { [unowned self] in removing(targetThreadIds, actions.moveToInbox) },
 
             // Inbox
+            Command(id: "thread.nextMessage", title: "Next message", group: .thread, shortcuts: ["n"], showsInPalette: false,
+                    isAvailable: { [unowned self] in openThreadId != nil }) { [unowned self] in moveMessageSelection(1) },
+            Command(id: "thread.previousMessage", title: "Previous message", group: .thread, shortcuts: ["p"], showsInPalette: false,
+                    isAvailable: { [unowned self] in openThreadId != nil }) { [unowned self] in moveMessageSelection(-1) },
             Command(id: "inbox.compose", title: "Compose", group: .inbox, icon: "square.and.pencil", shortcuts: ["c"],
                     keywords: ["new", "write"]) { [unowned self] in compose = ComposeRequest(.new(to: [])) },
             Command(id: "inbox.next", title: "Next thread", group: .inbox, shortcuts: ["j", "down"], showsInPalette: false,
@@ -67,12 +71,12 @@ extension AppState {
                     isAvailable: { [unowned self] in actions.canUndo }) { [unowned self] in undo() },
 
             // Navigation
-            goTo("inbox", .inbox, "Inbox", "tray", "g i"),
+            goTo("inbox", .inbox, "Inbox", "notion.inbox", "g i"),
             goTo("sent", .sent, "Sent", "paperplane", "g t"),
-            goTo("drafts", .drafts, "Drafts", "doc", "g d"),
+            goTo("drafts", .drafts, "Drafts", "pencil.and.outline", "g d"),
             goTo("starred", .starred, "Starred", "star", "g s"),
-            goTo("all", .all, "All Mail", "tray.full", "g a"),
-            goTo("spam", .spam, "Spam", "exclamationmark.octagon", "g !"),
+            goTo("all", .all, "All Mail", "tray.2", "g a"),
+            goTo("spam", .spam, "Spam", "exclamationmark.square", "g !"),
             goTo("trash", .trash, "Trash", "trash", "g #"),
 
             // Misc
@@ -80,18 +84,19 @@ extension AppState {
                 palette = palette == nil ? .commands : nil
             },
             Command(id: "misc.search", title: "Search", group: .misc, icon: "magnifyingglass", shortcuts: ["/", "cmd+p"],
-                    keywords: ["find"]) { [unowned self] in palette = .search },
+                    showsInPalette: false) { [unowned self] in palette = .search },
             Command(id: "misc.shortcuts", title: "Shortcuts", group: .misc, icon: "keyboard", shortcuts: ["?"],
                     keywords: ["keys", "help"]) { [unowned self] in settings = .shortcuts },
-            Command(id: "misc.settings", title: "Settings", group: .misc, icon: "gearshape", shortcuts: ["cmd+,"],
-                    keywords: ["preferences"]) { [unowned self] in settings = .inbox },
-            Command(id: "misc.toggleSidebar", title: "Toggle sidebar", group: .misc, icon: "sidebar.left", shortcuts: ["cmd+\\"]) { [unowned self] in
+            Command(id: "misc.toggleSidebar", title: "Toggle sidebar", group: .misc, icon: "sidebar.left", shortcuts: ["cmd+\\"],
+                    showsInPalette: false) { [unowned self] in
                 isSidebarVisible.toggle()
             },
             Command(id: "misc.themeLight", title: "Set theme · Light", group: .misc, icon: "sun.max", keywords: ["appearance"]) { [unowned self] in theme = .light },
             Command(id: "misc.themeDark", title: "Set theme · Dark", group: .misc, icon: "moon", shortcuts: ["cmd+L"],
                     keywords: ["appearance"]) { [unowned self] in theme = theme == .dark ? .light : .dark },
             Command(id: "misc.themeSystem", title: "Set theme · System", group: .misc, icon: "circle.lefthalf.filled", keywords: ["appearance"]) { [unowned self] in theme = .system },
+            Command(id: "misc.settings", title: "Settings", group: .misc, icon: "gearshape", shortcuts: ["cmd+,"],
+                    keywords: ["preferences"]) { [unowned self] in settings = .inbox },
         ])
     }
 

@@ -15,18 +15,23 @@ struct ThreadView: View {
         VStack(spacing: 0) {
             toolbar
             if let detail = detail.value {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        subject(detail)
-                        messages(detail)
-                        bottom(detail)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            subject(detail)
+                            messages(detail)
+                            bottom(detail)
+                        }
+                        .padding(.bottom, 32)
+                        .frame(maxWidth: Theme.Metrics.readerMaxWidth + 2 * Theme.Metrics.readerPadding, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.bottom, 32)
-                    .frame(maxWidth: Theme.Metrics.readerMaxWidth + 2 * Theme.Metrics.readerPadding, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onChange(of: app.selectedMessageId) { _, id in
+                        if let id { withAnimation(Theme.Motion.standard) { proxy.scrollTo(id, anchor: .top) } }
+                    }
                 }
             } else if detail.isLoaded {
-                EmptyState(title: "Thread not found", message: "It may have been deleted on another device.", symbol: "questionmark.folder")
+                EmptyState(title: "Thread not found", message: "It may have been deleted on another device.", art: false)
             } else {
                 Spacer(minLength: 0)
             }
@@ -55,6 +60,7 @@ struct ThreadView: View {
             IconButton(systemName: "chevron.down", help: "Next  J") { app.moveFocus(1) }
                 .disabled(index.map { $0 == ids.count - 1 } ?? true)
             Spacer()
+            RemindMenu(ids: [threadId])
             IconButton(systemName: "app.badge", help: "Mark as unread  ⇧U") { app.commands.run("thread.markUnread") }
             IconButton(systemName: "tag", help: "Label  L") { app.commands.run("thread.label") }
             IconButton(systemName: "archivebox", help: "Archive  E") { app.commands.run("thread.archive") }
@@ -95,7 +101,7 @@ struct ThreadView: View {
                     RemovableChip(label: label) { app.actions.setLabels([threadId], remove: [label.id]) }
                 }
                 Button { app.commands.run("thread.label") } label: {
-                    Text("Add label").textStyle(.body).foregroundStyle(Theme.textQuaternary)
+                    Text("Add label").textStyle(.body).foregroundStyle(Theme.placeholder)
                         .padding(.horizontal, 4)
                         .frame(height: Theme.Metrics.chipHeightReader)
                         .hoverFill(radius: Theme.Metrics.chipRadius)
@@ -125,7 +131,7 @@ struct ThreadView: View {
     private func items(_ detail: ThreadDetail) -> [Item] {
         let messages = detail.messages.filter { !$0.isDraft }
         let lastId = messages.last?.id
-        let isOpen = { (m: Message) in m.id == lastId || expanded.contains(m.id) }
+        let isOpen = { (m: Message) in m.id == lastId || m.id == app.selectedMessageId || expanded.contains(m.id) }
         var out: [Item] = []
         var run: [Message] = []
         func flush() {
@@ -146,16 +152,25 @@ struct ThreadView: View {
     }
 
     private func messages(_ detail: ThreadDetail) -> some View {
-        ForEach(items(detail)) { item in
+        let items = items(detail)
+        return ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
             switch item {
             case .message(let message, let isExpanded):
-                if isExpanded {
-                    MessageView(message: message, attachments: detail.attachments[message.id] ?? [],
-                                selfEmail: app.account?.email) { toggle(message.id) }
-                } else {
-                    CollapsedMessage(message: message) { toggle(message.id) }
+                Group {
+                    if isExpanded {
+                        MessageView(message: message, attachments: detail.attachments[message.id] ?? [],
+                                    selfEmail: app.account?.email) { toggle(message.id) }
+                    } else {
+                        CollapsedMessage(message: message) { toggle(message.id) }
+                    }
                 }
-                Hairline()
+                .overlay(alignment: .leading) {
+                    if app.selectedMessageId == message.id {
+                        Theme.accent.frame(width: Theme.Metrics.selectedMessageBar)
+                    }
+                }
+                .id(message.id)
+                if i < items.count - 1, case .message = items[i + 1] { Hairline() }
             case .more(let count):
                 ZStack {
                     Hairline()
@@ -208,8 +223,8 @@ private struct ButtonLabel: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(Theme.iconPrimary)
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 14)).foregroundStyle(Theme.iconPrimary).frame(width: 16, height: 16)
             Text(title)
         }
     }
@@ -237,7 +252,7 @@ private struct RemovableChip: View {
         .padding(.horizontal, 6)
         .frame(height: Theme.Metrics.chipHeightReader)
         .background(color.fill, in: RoundedRectangle(cornerRadius: Theme.Metrics.chipRadius, style: .continuous))
-        .onHover { hovering = $0 }
+        .onLiveHover { hovering = $0 }
     }
 }
 
@@ -247,10 +262,12 @@ private struct CollapsedMessage: View {
     let expand: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 0) {
             Text(message.sender.displayName).textStyle(.body).foregroundStyle(Theme.textPrimary).lineLimit(1).fixedSize()
             Text(message.snippet).textStyle(.body).foregroundStyle(Theme.textTertiary).lineLimit(1)
-            Spacer(minLength: 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 10)
+                .padding(.trailing, 16)
             Text(MessageDate.format(message.date)).textStyle(.body).foregroundStyle(Theme.textTertiary).fixedSize()
         }
         .padding(.horizontal, Theme.Metrics.readerPadding)
@@ -333,7 +350,6 @@ private struct MessageView: View {
                     .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
             }
         }
         .padding(.horizontal, Theme.Metrics.readerPadding)
@@ -453,11 +469,14 @@ enum MessageDate {
     /// "8:12 AM" today, "Sep 22, 8:12 AM" this year, "Dec 25, 2024" before.
     static func format(_ date: Date, now: Date = .now) -> String {
         let cal = Calendar.current
-        if cal.isDate(date, inSameDayAs: now) { return date.formatted(date: .omitted, time: .shortened) }
-        if cal.isDate(date, equalTo: now, toGranularity: .year) {
-            return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        let text = if cal.isDate(date, inSameDayAs: now) {
+            date.formatted(date: .omitted, time: .shortened)
+        } else if cal.isDate(date, equalTo: now, toGranularity: .year) {
+            date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        } else {
+            date.formatted(.dateTime.month(.abbreviated).day().year())
         }
-        return date.formatted(.dateTime.month(.abbreviated).day().year())
+        return text.replacingOccurrences(of: "\u{202F}", with: " ")
     }
 }
 

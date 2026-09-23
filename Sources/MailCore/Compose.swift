@@ -74,6 +74,13 @@ public struct ComposeDraft: Sendable, Hashable {
         return cut.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Appends `text` as a new paragraph after what was typed, keeping the signature block below.
+    public mutating func insert(_ text: String) {
+        let signature = body.range(of: "\n\(Self.signatureDelimiter)\n").map { String(body[$0.lowerBound...]) } ?? ""
+        let typed = typedText
+        body = (typed.isEmpty ? text : typed + "\n\n" + text) + (signature.isEmpty ? "" : "\n" + signature)
+    }
+
     /// Nothing worth keeping as a draft.
     public var isPristine: Bool {
         guard typedText.isEmpty, !attachments.contains(where: { $0.gmailMessageId == nil }) else { return false }

@@ -65,7 +65,6 @@ public struct Command: Identifiable, Sendable {
         case thread = "Thread"
         case inbox = "Inbox"
         case navigation = "Navigation"
-        case integrations = "Integrations"
         case misc = "Misc"
     }
 

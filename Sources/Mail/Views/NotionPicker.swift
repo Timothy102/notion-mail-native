@@ -121,7 +121,7 @@ struct NotionPicker: View {
                             ForEach(Array(results.enumerated()), id: \.element.id) { index, object in
                                 row(object, selected: index == selection)
                                     .id(index)
-                                    .onHover { if $0 { selection = index } }
+                                    .onLiveHover { if $0 { selection = index } }
                                     .onTapGesture { choose(index) }
                             }
                         }

@@ -243,7 +243,7 @@ extension AppState {
                     keywords: ["notion"], isAvailable: { latestLink() != nil }) {
                         if let link = latestLink(), let url = URL(string: link.url) { NSWorkspace.shared.open(url) }
                     },
-            Command(id: "integrations.settings", title: "Connect Notion", group: .integrations, icon: "puzzlepiece.extension",
+            Command(id: "integrations.settings", title: "Connect Notion", group: .misc, icon: "link.badge.plus",
                     keywords: ["notion", "token", "calendar", "integrations"]) { [unowned self] in settings = .integrations },
         ])
     }

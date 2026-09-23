@@ -46,7 +46,7 @@ struct InboxList: View {
                         SelectAllBox(ids: visibleIds).padding(.leading, Theme.Metrics.checkboxX - 7)
                     }
                 }
-                .onHover { headerHovered = $0 }
+                .onLiveHover { headerHovered = $0 }
         } else {
             BulkHeader(ids: visibleIds)
         }
@@ -57,7 +57,7 @@ struct InboxList: View {
     @ViewBuilder
     private func content(_ layout: RowLayout) -> some View {
         if let error = threads.error {
-            EmptyState(title: "Couldn't load mail", message: error.localizedDescription, symbol: nil) {
+            EmptyState(title: "Couldn't load mail", message: error.localizedDescription, art: false) {
                 let box = app.mailbox
                 threads.observe(app.store) { try Store.threads($0, in: box) }
             }
@@ -66,9 +66,9 @@ struct InboxList: View {
             Spacer(minLength: 0)
         } else if filtered.isEmpty {
             if unreadOnly, !threads.value.isEmpty {
-                EmptyState(title: "No unread mail", message: "Everything in \(title) has been read.", symbol: "envelope.open")
+                EmptyState(title: "No unread mail", message: "Everything in \(title) has been read.")
             } else {
-                EmptyState(title: "No mail here!", message: "Rest easy, no mail carriers in sight.", symbol: "tray")
+                EmptyState(title: "No mail here!", message: "Rest easy, no mail carriers in sight.")
             }
         } else {
             list(layout)
@@ -168,12 +168,12 @@ struct InboxList: View {
 extension Mailbox {
     var symbol: String {
         switch self {
-        case .inbox: "tray.fill"
+        case .inbox: InboxTray.symbol
         case .starred: "star"
         case .sent: "paperplane"
-        case .drafts: "pencil.circle"
+        case .drafts: "pencil.and.outline"
         case .all: "tray.2"
-        case .spam: "exclamationmark.octagon"
+        case .spam: "exclamationmark.square"
         case .trash: "trash"
         case .label: "tag"
         }
@@ -190,13 +190,23 @@ struct PaneHeader<Accessory: View>: View {
     var iconTint: Color = Theme.iconSecondary
     var unreadOnly: Binding<Bool>?
     var groupByDate: Binding<Bool>?
+    /// Makes the icon and title a button (search reopens the palette with its query).
+    var onTitle: (() -> Void)?
     @ViewBuilder var accessory: Accessory
     @Environment(AppState.self) private var app
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 14)).foregroundStyle(iconTint).frame(width: 16, height: 16)
-            Text(title).textStyle(.bodyMedium).foregroundStyle(Theme.textPrimary).lineLimit(1)
+            if let onTitle {
+                Button(action: onTitle) {
+                    titleLabel.padding(.horizontal, 6).frame(height: Theme.Metrics.iconButton).hoverFill().contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, -6)
+                .help("Edit search")
+            } else {
+                titleLabel
+            }
             accessory
             Spacer(minLength: 12)
             HStack(spacing: 2) {
@@ -222,11 +232,12 @@ struct PaneHeader<Accessory: View>: View {
         .frame(height: Theme.Metrics.paneHeaderHeight)
         .contentShape(Rectangle())
     }
-}
 
-extension PaneHeader where Accessory == EmptyView {
-    init(title: String, icon: String, iconTint: Color = Theme.iconSecondary) {
-        self.init(title: title, icon: icon, iconTint: iconTint, unreadOnly: nil, groupByDate: nil) { EmptyView() }
+    private var titleLabel: some View {
+        HStack(spacing: 8) {
+            SlotIcon(systemName: icon, tint: iconTint).frame(width: 16, height: 16)
+            Text(title).textStyle(.bodyMedium).foregroundStyle(Theme.textPrimary).lineLimit(1)
+        }
     }
 }
 
@@ -279,6 +290,7 @@ private struct BulkHeader: View {
                 IconButton(systemName: "envelope.open", help: "Mark as read  ⇧I") { app.commands.run("thread.markRead") }
                 IconButton(systemName: "app.badge", help: "Mark as unread  ⇧U") { app.commands.run("thread.markUnread") }
                 IconButton(systemName: "archivebox", help: "Archive  E") { app.commands.run("thread.archive") }
+                RemindMenu(ids: app.targetThreadIds)
                 IconButton(systemName: "trash", help: "Trash  #") { app.commands.run("thread.trash") }
                 IconButton(systemName: "exclamationmark.octagon", help: "Report spam  !") { app.commands.run("thread.spam") }
                 IconButton(systemName: "tag", help: "Label  L") { app.commands.run("thread.label") }
@@ -309,7 +321,7 @@ struct MenuButton<Content: View>: View {
     var body: some View {
         Menu { content } label: {
             Image(systemName: systemName)
-                .font(.system(size: glyph * 0.875))
+                .font(.glyph(glyph))
                 .foregroundStyle(Theme.iconSecondary)
                 .frame(width: Theme.Metrics.iconButton, height: Theme.Metrics.iconButton)
                 .background(hovering ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous))
@@ -319,7 +331,7 @@ struct MenuButton<Content: View>: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .onHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
+        .onLiveHover { h in withAnimation(h ? Theme.Motion.hover : nil) { hovering = h } }
         .help(help)
     }
 }
@@ -362,7 +374,7 @@ struct GroupHeader: View {
         }
         .frame(maxWidth: .infinity, minHeight: Theme.Metrics.groupHeaderHeight, maxHeight: Theme.Metrics.groupHeaderHeight, alignment: .topLeading)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        .onLiveHover { hovering = $0 }
     }
 }
 
@@ -408,7 +420,9 @@ struct ThreadRow: View {
                     .textStyle(thread.isUnread ? .listUnread : .list)
                     .foregroundStyle(thread.isUnread ? Theme.textPrimary : Theme.textRead)
                     .lineLimit(1)
+                    .mask(Rectangle().padding(.vertical, -6))
                 MarkedText(text: excerpt ?? thread.snippet, terms: terms).textStyle(.listSecondary).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                    .mask(Rectangle().padding(.vertical, -6))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, Theme.Metrics.senderGap)
@@ -439,7 +453,7 @@ struct ThreadRow: View {
         .contentShape(Rectangle())
         .onTapGesture { tap() }
         .padding(.horizontal, Theme.Metrics.rowInset)
-        .onHover { h in
+        .onLiveHover { h in
             withAnimation(h ? Theme.Motion.hover : nil) { hovering = h }
             onHover?(h)
         }
@@ -542,7 +556,23 @@ private struct CappedWidth: Layout {
     }
 }
 
-/// Star, archive, trash and read/unread over the date column while a row is hovered (§5.2).
+/// Clock menu: archive now, back in the inbox (unread) at the chosen time.
+struct RemindMenu: View {
+    let ids: [String]
+    var glyph: CGFloat = Theme.Metrics.iconSmall
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        MenuButton(systemName: "clock", glyph: glyph, help: "Remind me") {
+            ForEach(MailDate.reminderOptions(), id: \.title) { option in
+                Button(option.title) { app.removing(ids) { app.actions.remind($0, at: option.date) } }
+            }
+        }
+        .disabled(ids.isEmpty)
+    }
+}
+
+/// Star, archive, trash, read/unread and remind over the date column while a row is hovered (§5.2).
 private struct HoverActions: View {
     let thread: MailThread
     @Environment(AppState.self) private var app
@@ -565,8 +595,9 @@ private struct HoverActions: View {
                        help: thread.isUnread ? "Mark as read  ⇧I" : "Mark as unread  ⇧U") {
                 app.actions.setRead(ids, thread.isUnread)
             }
+            RemindMenu(ids: ids, glyph: Theme.Metrics.iconMedium)
         }
-        .padding(2)
+        .padding(.horizontal, 1)
         .frame(height: Theme.Metrics.hoverPillHeight)
         .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.Metrics.rowRadius, style: .continuous))
         .elevation(.l1, radius: Theme.Metrics.rowRadius)
@@ -623,9 +654,10 @@ struct LabelPicker: View {
         let targets = app.targetThreadIds
         let matches = labels.value.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
         VStack(alignment: .leading, spacing: 0) {
-            TextField("", text: $query, prompt: Text("Label as…").foregroundStyle(Theme.textQuaternary))
+            TextField("", text: $query)
                 .textFieldStyle(.plain)
                 .textStyle(.body)
+                .placeholder("Label as…", showing: query.isEmpty)
                 .focused($focused)
                 .padding(.horizontal, 12)
                 .frame(height: 32)
@@ -659,7 +691,7 @@ struct LabelPicker: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .onHover { if $0 { index = i } }
+                        .onLiveHover { if $0 { index = i } }
                         .padding(.horizontal, 4)
                     }
                 }

@@ -50,7 +50,7 @@ struct CommandPalette: View {
             if mode == .search, let q = app.searchQuery { query = q }
             if Launch.snapshotPath != nil, let q = Launch.env["MAIL_QUERY"] { query = q }
             sections = buildSections()
-            focused = true
+            DispatchQueue.main.async { focused = true }
             keyMonitor = KeyMonitor { move($0) }
         }
         .onDisappear { keyMonitor = nil }
@@ -72,20 +72,21 @@ struct CommandPalette: View {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15))
-                    .foregroundStyle(Theme.iconSecondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .frame(width: Theme.Metrics.iconSmall)
-                TextField("", text: $query, prompt: Text(placeholder).foregroundStyle(Theme.textQuaternary))
+                TextField("", text: $query)
                     .textFieldStyle(.plain)
                     .textStyle(.paletteInput)
+                    .placeholder(placeholder, showing: query.isEmpty)
                     .focused($focused)
                     .onSubmit { run(selection) }
             }
             .padding(.horizontal, 16)
             .frame(height: Theme.Metrics.paletteInputHeight)
-            Hairline()
+            Theme.divider.frame(height: 1)
             if !items.isEmpty {
                 results
-                Hairline()
+                Theme.divider.frame(height: 1)
             }
             HStack(spacing: 16) {
                 footerHint("arrow.up.arrow.down", "Select")
@@ -117,7 +118,7 @@ struct CommandPalette: View {
                             row(item, selected: index == selection)
                                 .id(item.id)
                                 .onContinuousHover { phase in
-                                    if case .active = phase, Date.now.timeIntervalSince(keyboardMovedAt) > 0.3 { selection = index }
+                                    if case .active = phase, Launch.snapshotPath == nil, Date.now.timeIntervalSince(keyboardMovedAt) > 0.3 { selection = index }
                                 }
                                 .onTapGesture { run(index) }
                         }
@@ -165,21 +166,29 @@ struct CommandPalette: View {
             .paletteRow(selected: selected)
         default:
             HStack(spacing: 10) {
-                Image(systemName: item.icon ?? "circle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.iconSecondary)
-                    .frame(width: Theme.Metrics.iconMedium)
-                    .opacity(item.icon == nil ? 0 : 1)
+                icon(item.icon).frame(width: Theme.Metrics.iconMedium, height: Theme.Metrics.iconMedium)
                 Text(item.title).textStyle(.body).lineLimit(1)
                 Spacer(minLength: 8)
                 if let hint = item.hint {
-                    Text(hint).textStyle(.small).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                    Text(hint).textStyle(.small).foregroundStyle(Theme.textSecondary).lineLimit(1)
                         .frame(minWidth: 78, alignment: .trailing)
                 }
             }
             .paletteRow(selected: selected)
         }
     }
+
+    /// Same glyphs as the sidebar: the inbox tray, label dots, outline symbols.
+    @ViewBuilder
+    private func icon(_ name: String?) -> some View {
+        if let name, name.hasPrefix(Self.labelIcon) {
+            Circle().fill(LabelColor(named: String(name.dropFirst(Self.labelIcon.count))).dot).frame(width: 10, height: 10)
+        } else if let name {
+            SlotIcon(systemName: name, tint: Theme.textSecondary)
+        }
+    }
+
+    private static let labelIcon = "label.dot:"
 
     private func footerHint(_ symbol: String, _ title: String) -> some View {
         HStack(spacing: 4) {
@@ -218,18 +227,17 @@ struct CommandPalette: View {
         return out
     }
 
-    /// Registered commands plus "Go to <label>", fuzzy-filtered and, with a query, best match first.
+    /// Registered commands plus "Go to <label>", fuzzy-filtered on the title and, with a query, best match first.
     private func commandSections(_ q: String) -> [Section] {
         let labels = (try? app.store.db.read(Store.labels)) ?? []
         let labelCommands = labels.map { label in
-            Command(id: "go.label.\(label.id)", title: "Go to \(label.name)", group: .navigation, icon: "tag", keywords: ["label"]) { [app] in
+            Command(id: "go.label.\(label.id)", title: "Go to \(label.name)", group: .navigation, icon: Self.labelIcon + (label.color ?? "")) { [app] in
                 app.go(to: .label(label.id))
             }
         }
         let commands = app.commands.paletteCommands + labelCommands
         let scored: [(Command, Int)] = commands.compactMap { c in
-            let best = ([SearchText.fuzzyScore(q, c.title)] + c.keywords.map { SearchText.fuzzyScore(q, $0).map { $0 - 4 } }).compactMap { $0 }.max()
-            return best.map { (c, $0) }
+            SearchText.fuzzyScore(q, c.title).map { (c, $0) }
         }
         var groups = Command.Group.allCases.compactMap { group -> (Command.Group, [(Command, Int)])? in
             let rows = scored.filter { $0.0.group == group }
@@ -290,7 +298,7 @@ private extension View {
     func paletteRow(selected: Bool) -> some View {
         padding(.horizontal, 8)
             .frame(height: Theme.Metrics.paletteRowHeight)
-            .background(selected ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous))
+            .background(selected ? Theme.rowHover : .clear, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous))
             .contentShape(Rectangle())
     }
 }
@@ -323,7 +331,7 @@ private struct ThreadResultRow: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 48)
-        .background(selected ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Theme.Metrics.rowRadius, style: .continuous))
+        .background(selected ? Theme.rowHover : .clear, in: RoundedRectangle(cornerRadius: Theme.Metrics.rowRadius, style: .continuous))
         .contentShape(Rectangle())
     }
 }

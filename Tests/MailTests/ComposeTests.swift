@@ -35,6 +35,15 @@ final class ComposeTests: XCTestCase {
         XCTAssertTrue(raw.contains("In-Reply-To: \(m.messageIdHeader)"))
     }
 
+    func testInsertGoesAboveSignature() {
+        var draft = ComposeDraft(mode: .new, from: EmailAddress(name: nil, email: "me@x.com"))
+        draft.body = "\n\n-- \nTim"
+        draft.insert("Standup · 9:30")
+        XCTAssertEqual(draft.body, "Standup · 9:30\n\n-- \nTim")
+        draft.insert("Thanks")
+        XCTAssertEqual(draft.body, "Standup · 9:30\n\nThanks\n\n-- \nTim")
+    }
+
     func testSwitchingModeAndIdentityKeepsTypedText() throws {
         let app = try demoApp()
         let m = try lastInboxMessage(app, minMessages: 5)

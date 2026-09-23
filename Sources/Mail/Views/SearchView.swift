@@ -10,13 +10,18 @@ struct SearchView: View {
     @State private var remote = Live<[MailThread]>([])
     @State private var gmail = GmailState.idle
     @State private var labels = Live<[MailLabel]>([])
+    @State private var unreadOnly = false
+    @AppStorage("list.groupByDate") private var groupByDate = true
+    /// Set by the snapshot harness to show the "Searching Gmail…" state without a network.
+    @MainActor static var snapshotSearching = false
 
     private enum GmailState: Equatable { case idle, searching, done, failed }
 
     private var parsed: SearchQuery { SearchQuery(query) }
 
     private var hits: [SearchHit] {
-        gmail == .done && (parsed.needsGmail || local.value.isEmpty) ? remote.value.map { SearchHit(thread: $0) } : local.value
+        let all = gmail == .done && (parsed.needsGmail || local.value.isEmpty) ? remote.value.map { SearchHit(thread: $0) } : local.value
+        return unreadOnly ? all.filter(\.thread.isUnread) : all
     }
 
     var body: some View {
@@ -24,8 +29,9 @@ struct SearchView: View {
         GeometryReader { geo in
             let layout = RowLayout(paneWidth: geo.size.width, windowWidth: geo.size.width + (app.isSidebarVisible ? Theme.Metrics.sidebarWidth : 0))
             VStack(alignment: .leading, spacing: 0) {
-                PaneHeader(title: query, icon: "magnifyingglass") {
-                    if local.isLoaded, gmail != .searching {
+                PaneHeader(title: query, icon: "magnifyingglass", unreadOnly: $unreadOnly, groupByDate: $groupByDate,
+                           onTitle: { app.palette = .search }) {
+                    if local.isLoaded, !isSearchingGmail {
                         Text(hits.count == 1 ? "1 result" : "\(hits.count) results")
                             .textStyle(.body).foregroundStyle(Theme.textTertiary).fixedSize()
                     }
@@ -34,9 +40,9 @@ struct SearchView: View {
                     .padding(.horizontal, 74)
                     .frame(height: 28)
                 if let error = local.error {
-                    EmptyState(title: "Couldn't search", message: error.localizedDescription, symbol: nil) { observeLocal() }
-                } else if hits.isEmpty, gmail != .searching {
-                    EmptyState(title: "No results", message: "Try different words or a Gmail operator like from: or has:attachment", symbol: "magnifyingglass")
+                    EmptyState(title: "Couldn't search", message: error.localizedDescription, art: false) { observeLocal() }
+                } else if hits.isEmpty, !isSearchingGmail {
+                    EmptyState(title: "No results", message: "Try different words or a Gmail operator like from: or has:attachment")
                 } else {
                     list(hits, layout)
                 }
@@ -76,7 +82,7 @@ struct SearchView: View {
     @ViewBuilder
     private var source: some View {
         HStack(spacing: 6) {
-            switch gmail {
+            switch isSearchingGmail ? .searching : gmail {
             case .searching:
                 Text("Searching Gmail…")
                 DotsLoader()
@@ -94,6 +100,8 @@ struct SearchView: View {
         .foregroundStyle(Theme.textTertiary)
         .lineLimit(1)
     }
+
+    private var isSearchingGmail: Bool { gmail == .searching || Self.snapshotSearching }
 
     private func observeLocal() {
         let q = parsed
@@ -149,7 +157,7 @@ private struct SearchMarkRenderer: TextRenderer {
     func draw(layout: Text.Layout, in ctx: inout GraphicsContext) {
         for line in layout {
             for run in line where run[SearchMark.self] != nil {
-                let rect = run.typographicBounds.rect.insetBy(dx: -1.5, dy: 0)
+                let rect = run.typographicBounds.rect
                 ctx.fill(RoundedRectangle(cornerRadius: 2, style: .continuous).path(in: rect), with: .color(Theme.markBackground))
             }
             ctx.draw(line)
