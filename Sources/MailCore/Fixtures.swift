@@ -93,6 +93,7 @@ public enum Fixtures {
     private static let stripe = a("Figma", "invoice+statements@figma.com")
     private static let notion = a("Notion", "notify@mail.notion.so")
     private static let aws = a("AWS Notifications", "no-reply@sns.amazonaws.com")
+    private static let dalmatia = a("Dalmatia Air", "booking@dalmatia-air.example")
     private static let tap = a("TAP Air Portugal", "no-reply@flytap.com")
     private static let stack = a("The Sunday Stack", "hello@sundaystack.news")
     private static let moats = a("Margins & Moats", "letters@marginsandmoats.com")
@@ -153,6 +154,13 @@ public enum Fixtures {
         let swiftIslandDay = d.day(-26, 9)
         return [
             // MARK: Today
+            T(subject: "Booking confirmed: Ljubljana → Split · DA 482", labels: ["INBOX"], unread: true, messages: [
+                M(from: dalmatia, to: [me], date: d.today(7, 40),
+                  text: "Booking reference 7HKQ2P. Ljubljana (LJU) → Split (SPU), DA 482, Fri 07:15. Seat 3C. Check-in opens 24h before departure.",
+                  html: Self.airlineHTML(),
+                  attachments: [OutgoingAttachment(filename: "boarding-qr.png", mimeType: "image/png",
+                                                   data: gradientPNG(hue: 0.58, width: 180, height: 180), contentId: "qr-7HKQ2P@dalmatia-air")]),
+            ]),
             T(subject: "Q4 roadmap: decisions needed before Friday", labels: ["INBOX", "Label_1"], unread: true, unreadCount: 2, messages: [
                 M(from: priya, to: [me, marco, zoe], date: d.today(8, 12), text: """
                     Hi all,
@@ -602,6 +610,24 @@ public enum Fixtures {
         return OutgoingAttachment(filename: name, mimeType: type, data: data)
     }
 
+    /// Stand-ins for the fixtures' "remote" images: demo mode has no network.
+    static let remoteImages: [String: Data] = [
+        "https://cdn.sundaystack.news/header-214.png": gradientPNG(hue: 0.12, width: 600, height: 150),
+        "https://arcadia-supply.com/img/products-grid.jpg": gradientPNG(hue: 0.05, width: 496, height: 280),
+        "https://img.dalmatia-air.example/mail/logo.png": gradientPNG(hue: 0.6, width: 160, height: 40),
+        "https://img.dalmatia-air.example/mail/hero-split.jpg": gradientPNG(hue: 0.52, width: 650, height: 240),
+        "https://img.dalmatia-air.example/mail/seat.png": gradientPNG(hue: 0.08, width: 300, height: 160),
+        "https://img.dalmatia-air.example/mail/bags.png": gradientPNG(hue: 0.9, width: 300, height: 160),
+        "https://t.dalmatia-air.example/open.gif?u=7HKQ2P": gradientPNG(hue: 0, width: 1, height: 1),
+    ]
+
+    /// Demo mode: `remoteImages` URLs become data URIs; any other remote URL is left alone.
+    public static func offlineImages(_ html: String) -> String {
+        remoteImages.reduce(html) { out, image in
+            out.replacingOccurrences(of: image.key, with: "data:image/png;base64," + image.value.base64EncodedString())
+        }
+    }
+
     private static func photo(_ name: String, hue: CGFloat) -> OutgoingAttachment {
         OutgoingAttachment(filename: name, mimeType: "image/png", data: gradientPNG(hue: hue))
     }
@@ -741,6 +767,46 @@ public enum Fixtures {
             <p style="font-size:11px;color:#aa8866;margin-top:16px">Arcadia Supply Co. · Kongresni trg 1, Ljubljana · <a href="#" style="color:#aa8866">Unsubscribe</a></p>
           </td></tr>
         </table>
+        """
+    }
+
+    /// A 650px fixed-width airline template: remote images, a cid: boarding QR, a tracking pixel and a long URL.
+    private static func airlineHTML() -> String {
+        let img = "https://img.dalmatia-air.example/mail"
+        return """
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#eef2f6"><tr><td align="center" style="padding:24px 0">
+        <table width="650" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:650px;font-family:Arial,Helvetica,sans-serif;color:#1c2b39">
+          <tr><td style="padding:20px 32px;background:#0b3d6e"><img src="\(img)/logo.png" width="160" height="40" alt="Dalmatia Air" style="display:block"></td></tr>
+          <tr><td><img src="\(img)/hero-split.jpg" width="650" height="240" alt="Split riva at sunrise" style="display:block;width:650px"></td></tr>
+          <tr><td style="padding:28px 32px 8px;font-size:24px;font-weight:bold">Your booking is confirmed</td></tr>
+          <tr><td style="padding:0 32px 20px;font-size:15px;line-height:22px;color:#4a5b6b">Hi Tim, thanks for flying with us. Booking reference <b style="color:#1c2b39;letter-spacing:1px">7HKQ2P</b>.</td></tr>
+          <tr><td style="padding:0 32px">
+            <table width="586" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #d7e0e8;border-radius:6px">
+              <tr>
+                <td width="190" style="padding:18px"><div style="font-size:34px;font-weight:bold">LJU</div><div style="font-size:13px;color:#6b7c8c">Ljubljana · Fri 07:15</div></td>
+                <td width="206" align="center" style="font-size:13px;color:#6b7c8c">DA 482 · 1h 05m<br>Economy Classic</td>
+                <td width="190" align="right" style="padding:18px"><div style="font-size:34px;font-weight:bold">SPU</div><div style="font-size:13px;color:#6b7c8c">Split · Fri 08:20</div></td>
+              </tr>
+              <tr><td colspan="3" style="border-top:1px dashed #d7e0e8;padding:18px">
+                <table cellpadding="0" cellspacing="0" border="0"><tr>
+                  <td width="120"><img src="cid:qr-7HKQ2P@dalmatia-air" width="110" height="110" alt="Boarding pass QR"></td>
+                  <td style="padding-left:18px;font-size:14px;line-height:22px">Passenger <b>Tim Cvetko</b><br>Seat <b>3C</b> · Group 2 · Gate closes 06:55<br>1 × 23 kg checked bag</td>
+                </tr></table>
+              </td></tr>
+            </table>
+          </td></tr>
+          <tr><td style="padding:24px 32px 8px">
+            <table width="586" cellpadding="0" cellspacing="0" border="0"><tr>
+              <td width="283" valign="top"><img src="\(img)/seat.png" width="283" height="150" alt="Choose your seat" style="display:block"><p style="font-size:14px;font-weight:bold;margin:10px 0 2px">Pick a window seat</p><p style="font-size:13px;color:#6b7c8c;margin:0">From €7 per flight</p></td>
+              <td width="20"></td>
+              <td width="283" valign="top"><img src="\(img)/bags.png" width="283" height="150" alt="Add baggage" style="display:block"><p style="font-size:14px;font-weight:bold;margin:10px 0 2px">Travelling with more?</p><p style="font-size:13px;color:#6b7c8c;margin:0">Add a bag online and save 30%</p></td>
+            </tr></table>
+          </td></tr>
+          <tr><td align="center" style="padding:24px 32px"><a href="https://www.dalmatia-air.example/manage?ref=7HKQ2P" style="display:inline-block;background:#e4572e;color:#ffffff;font-weight:bold;font-size:15px;padding:12px 28px;border-radius:4px;text-decoration:none">Manage booking</a></td></tr>
+          <tr><td style="padding:16px 32px 28px;font-size:11px;line-height:17px;color:#8a99a8;border-top:1px solid #e3e9ef">Check in online: https://www.dalmatia-air.example/check-in/booking/7HKQ2P/passenger/1/segment/DA482-LJU-SPU?utm_source=transactional&amp;utm_medium=email&amp;utm_campaign=booking_confirmation<br>Dalmatia Air d.d. · Obala kneza Branimira 1, Split · <a href="https://www.dalmatia-air.example/privacy" style="color:#8a99a8">Privacy</a></td></tr>
+        </table>
+        <img src="https://t.dalmatia-air.example/open.gif?u=7HKQ2P" width="1" height="1" alt="">
+        </td></tr></table>
         """
     }
 

@@ -14,7 +14,10 @@ enum Snapshot {
         place(window)
         prepare(app, screen: Launch.screen)
         if Launch.screen == "calendar" {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { scrollSidebarToEnd(window) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { scrollToEnd(window, rightmost: false) }
+        }
+        if Launch.screen == "html-bottom" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { scrollToEnd(window, rightmost: true) }
         }
         Task {
             try? await Task.sleep(for: .seconds(0.4))
@@ -64,6 +67,9 @@ enum Snapshot {
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
             if let thread = inbox.first(where: { $0.subject.hasPrefix("The Sunday Stack") }) { app.open(thread.id) }
             if screen == "labels" { app.isLabelPickerOpen = true }
+        case "html-images", "html-wide", "html-bottom":
+            let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
+            if let thread = inbox.first(where: { $0.subject.hasPrefix("Booking confirmed") }) { app.open(thread.id) }
         case "quotes", "quotes-expanded", "quotes-text", "quotes-text-expanded", "reply-quotes":
             let subject = screen.hasPrefix("quotes-text") ? "Talk proposal" : "Brand refresh"
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
@@ -132,12 +138,13 @@ enum Snapshot {
         window.orderFrontRegardless()
     }
 
-    /// The sidebar is the leftmost scroll view; its Calendar section sits below the fold.
-    private static func scrollSidebarToEnd(_ window: NSWindow) {
+    /// The sidebar is the leftmost scroll view (its Calendar section sits below the fold); the reader is the rightmost.
+    private static func scrollToEnd(_ window: NSWindow, rightmost: Bool) {
         func scrollViews(_ v: NSView) -> [NSScrollView] { (v as? NSScrollView).map { [$0] } ?? v.subviews.flatMap(scrollViews) }
         guard let root = window.contentView,
-              let sidebar = scrollViews(root).min(by: { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }),
-              let doc = sidebar.documentView else { return }
+              case let sorted = scrollViews(root).sorted(by: { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }),
+              let target = rightmost ? sorted.last : sorted.first,
+              let doc = target.documentView else { return }
         doc.scroll(NSPoint(x: 0, y: doc.isFlipped ? doc.bounds.maxY : 0))
     }
 

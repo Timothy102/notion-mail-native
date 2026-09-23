@@ -3,19 +3,21 @@ import MailCore
 import SwiftUI
 import WebKit
 
-/// Untrusted HTML mail body (SPEC §4.4): JavaScript off, strict CSP, remote content blocked
-/// unless `allowRemote`, every navigation leaves the web view. Sized to its content height.
+/// Untrusted HTML mail body (SPEC §4.4): page JavaScript off, strict CSP, remote images only when `allowRemote`,
+/// `cid:` parts served by `CIDSchemeHandler`, every navigation leaves the web view. Sized to its content height.
 struct MessageBody: View {
+    static let loadRemoteKey = "images.loadRemote"
     let html: String
     var attachments: [Attachment] = []
     var allowRemote = false
+    var gmail: GmailClient?
     var onMailto: (EmailAddress) -> Void = { _ in }
     @Environment(\.colorScheme) private var scheme
     @State private var height: CGFloat = 0
 
     var body: some View {
-        let document = MailHTML.document(html, attachments: attachments, allowRemote: allowRemote, dark: scheme == .dark)
-        WebBody(document: document, height: $height, onMailto: onMailto)
+        let document = MailHTML.document(html, allowRemote: allowRemote, dark: scheme == .dark)
+        WebBody(document: document, attachments: attachments, gmail: gmail, height: $height, onMailto: onMailto)
             .frame(height: max(height, 1))
             .opacity(height > 0 ? 1 : 0)
     }
@@ -26,6 +28,7 @@ struct QuotedHistory: View {
     let html: String
     var attachments: [Attachment] = []
     var allowRemote = false
+    var gmail: GmailClient?
     var onMailto: (EmailAddress) -> Void = { _ in }
     @State private var isExpanded = QuotedHistory.snapshotExpanded
     static var snapshotExpanded = false
@@ -33,7 +36,7 @@ struct QuotedHistory: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             QuoteToggle(isExpanded: $isExpanded)
-            if isExpanded { MessageBody(html: html, attachments: attachments, allowRemote: allowRemote, onMailto: onMailto) }
+            if isExpanded { MessageBody(html: html, attachments: attachments, allowRemote: allowRemote, gmail: gmail, onMailto: onMailto) }
         }
     }
 }
@@ -57,63 +60,10 @@ struct QuoteToggle: View {
     }
 }
 
-enum MailHTML {
-    /// Whether the HTML pulls anything from the network (images, backgrounds, stylesheets).
-    static func hasRemoteContent(_ html: String) -> Bool {
-        html.range(of: #"(src|background)\s*=\s*["']?\s*(https?:)?//|url\(\s*["']?\s*(https?:)?//"#,
-                   options: [.regularExpression, .caseInsensitive]) != nil
-    }
-
-    /// Mail that paints its own backgrounds; in dark mode it is inverted rather than recoloured.
-    static func isRich(_ html: String) -> Bool {
-        html.range(of: #"bgcolor|background(-color)?\s*:"#, options: [.regularExpression, .caseInsensitive]) != nil
-    }
-
-    static func document(_ html: String, attachments: [Attachment], allowRemote: Bool, dark: Bool) -> String {
-        let remote = allowRemote ? " https: http:" : ""
-        let blocked = allowRemote ? "" : "\nimg[src^=\"http\"],img[src^=\"//\"]{display:none!important}"
-        let csp = "default-src 'none'; img-src data: cid:\(remote); style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'"
-        let rich = isRich(html)
-        let text = css(Theme.textPrimary, dark: dark)
-        let link = css(Theme.textSecondary, dark: dark)
-        let quote = css(Theme.border, dark: dark)
-        var style = """
-        html,body{margin:0;padding:0;overflow:hidden;background:transparent}
-        body{font:14px/1.71 -apple-system,system-ui,sans-serif;color:\(text);word-wrap:break-word;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
-        p{margin:0}
-        img{max-width:100%;height:auto}
-        table{max-width:100%}
-        blockquote{margin:4px 0 4px 4px!important;border-left:1px solid \(quote)!important;padding:0 0 0 12px!important}
-        a{color:\(link);text-decoration-thickness:.05em;text-underline-offset:3px}
-        ::selection{background:rgba(35,131,226,.28)}\(blocked)
-        """
-        if dark && rich {
-            style += """
-
-            html{background:#fff;filter:invert(.855) hue-rotate(180deg)}
-            body{color:#1D1B16}
-            a{color:#5F5E5B}
-            img,video,picture,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)}
-            """
-        } else if dark {
-            style += "\nbody *{color:inherit!important;background:transparent!important}\na,a *{color:\(link)!important}"
-        }
-        return """
-        <!doctype html><html><head><meta charset="utf-8">
-        <meta http-equiv="Content-Security-Policy" content="\(csp)">
-        <meta name="color-scheme" content="\(dark && !rich ? "dark" : "light")">
-        <style>\(style)</style></head><body>\(inlineCIDs(html, attachments))</body></html>
-        """
-    }
-
-    /// `cid:` references become data URIs; WebKit can't resolve cid: on its own.
-    static func inlineCIDs(_ html: String, _ attachments: [Attachment]) -> String {
-        var out = html
-        for a in attachments {
-            guard let cid = a.contentId, let data = a.data, out.contains("cid:\(cid)") else { continue }
-            out = out.replacingOccurrences(of: "cid:\(cid)", with: "data:\(a.mimeType);base64,\(data.base64EncodedString())")
-        }
-        return out
+extension MailHTML {
+    static func document(_ html: String, allowRemote: Bool, dark: Bool) -> String {
+        document(html, allowRemote: allowRemote, dark: dark,
+                 palette: Palette(text: css(Theme.textPrimary, dark: dark), link: css(Theme.textSecondary, dark: dark), quote: css(Theme.border, dark: dark)))
     }
 
     private static func css(_ color: Color, dark: Bool) -> String {
@@ -126,8 +76,43 @@ enum MailHTML {
     }
 }
 
+/// Serves `nmail-cid:` requests from the message's parts, downloading them from Gmail when the bytes aren't local.
+@MainActor
+final class CIDSchemeHandler: NSObject, WKURLSchemeHandler {
+    var attachments: [Attachment] = []
+    var gmail: GmailClient?
+    private var tasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    private static let cache = NSCache<NSString, NSData>()
+
+    func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
+        guard let url = task.request.url, let part = MailHTML.attachment(for: url, in: attachments) else {
+            return task.didFailWithError(URLError(.fileDoesNotExist))
+        }
+        let key = ObjectIdentifier(task)
+        let gmail = gmail
+        tasks[key] = Task { [weak self] in
+            var data = part.data ?? Self.cache.object(forKey: part.id as NSString) as Data?
+            if data == nil, let gmail, let remoteId = part.gmailAttachmentId {
+                data = try? await gmail.attachment(messageId: part.messageId, id: remoteId)
+                if let data { Self.cache.setObject(data as NSData, forKey: part.id as NSString) }
+            }
+            guard let self, self.tasks.removeValue(forKey: key) != nil else { return }
+            guard let data else { return task.didFailWithError(URLError(.resourceUnavailable)) }
+            task.didReceive(URLResponse(url: url, mimeType: part.mimeType, expectedContentLength: data.count, textEncodingName: nil))
+            task.didReceive(data)
+            task.didFinish()
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {
+        tasks.removeValue(forKey: ObjectIdentifier(task))?.cancel()
+    }
+}
+
 private struct WebBody: NSViewRepresentable {
     let document: String
+    let attachments: [Attachment]
+    let gmail: GmailClient?
     @Binding var height: CGFloat
     let onMailto: (EmailAddress) -> Void
 
@@ -138,42 +123,42 @@ private struct WebBody: NSViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback = .all
+        config.setURLSchemeHandler(context.coordinator.parts, forURLScheme: MailHTML.cidScheme)
+        let scripts = config.userContentController
+        scripts.addUserScript(WKUserScript(source: MailHTML.fitScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient))
+        scripts.add(context.coordinator, contentWorld: .defaultClient, name: "height")
         let view = PassiveWebView(frame: .zero, configuration: config)
         view.setValue(false, forKey: "drawsBackground")
         view.navigationDelegate = context.coordinator
-        view.onResize = { [weak coordinator = context.coordinator] in coordinator?.measure() }
-        context.coordinator.view = view
         return view
     }
 
     func updateNSView(_ view: PassiveWebView, context: Context) {
         context.coordinator.parent = self
+        context.coordinator.parts.attachments = attachments
+        context.coordinator.parts.gmail = gmail
         guard context.coordinator.loaded != document else { return }
         context.coordinator.loaded = document
         view.loadHTMLString(document, baseURL: nil)
     }
 
+    static func dismantleNSView(_ view: PassiveWebView, coordinator: Coordinator) {
+        view.configuration.userContentController.removeAllScriptMessageHandlers()
+    }
+
     @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: WebBody
-        weak var view: PassiveWebView?
         var loaded: String?
+        let parts = CIDSchemeHandler()
 
         init(_ parent: WebBody) {
             self.parent = parent
         }
 
-        func measure() {
-            view?.evaluateJavaScript("Math.ceil(document.body.getBoundingClientRect().height)") { [weak self] value, _ in
-                guard let self, let h = value as? Double else { return }
-                MainActor.assumeIsolated {
-                    if abs(self.parent.height - h) > 0.5 { self.parent.height = h }
-                }
-            }
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            measure()
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let h = (message.body as? NSNumber)?.doubleValue, abs(parent.height - h) > 0.5 else { return }
+            parent.height = h
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
@@ -195,18 +180,7 @@ private struct WebBody: NSViewRepresentable {
 
 /// A web view that never scrolls itself: wheel events go to the enclosing SwiftUI scroll view.
 final class PassiveWebView: WKWebView {
-    var onResize: () -> Void = {}
-    private var lastWidth: CGFloat = 0
-
     override func scrollWheel(with event: NSEvent) {
         nextResponder?.scrollWheel(with: event)
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        if abs(newSize.width - lastWidth) > 0.5 {
-            lastWidth = newSize.width
-            onResize()
-        }
     }
 }
