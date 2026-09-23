@@ -1,9 +1,13 @@
-import AppKit
 import AuthenticationServices
 import CryptoKit
 import Foundation
-import Network
 import Security
+#if os(macOS)
+import AppKit
+import Network
+#else
+import UIKit
+#endif
 
 struct OAuthClient: Decodable {
     let client_id: String
@@ -16,6 +20,7 @@ struct OAuthClient: Decodable {
     var usesLoopback: Bool { client_secret != nil }
     var reversedClientScheme: String { client_id.split(separator: ".").reversed().joined(separator: ".") }
 
+    #if os(macOS)
     // The client's credentials JSON, downloaded from Cloud Console.
     static func load() throws -> OAuthClient {
         let url = FileManager.default.homeDirectoryForCurrentUser
@@ -23,6 +28,17 @@ struct OAuthClient: Decodable {
         struct File: Decodable { let installed: OAuthClient }
         return try JSONDecoder().decode(File.self, from: Data(contentsOf: url)).installed
     }
+    #else
+    static let infoPlistKey = "NMailGoogleClientID"
+
+    /// The iOS OAuth client (no secret) from the app's Info.plist.
+    static func load() throws -> OAuthClient {
+        guard let id = Bundle.main.object(forInfoDictionaryKey: infoPlistKey) as? String, !id.isEmpty, !id.hasPrefix("REPLACE_") else {
+            throw AuthError.badResponse("This build has no Google client ID. Set \(infoPlistKey) in ios/project.yml.")
+        }
+        return OAuthClient(client_id: id, client_secret: nil)
+    }
+    #endif
 }
 
 public enum AuthError: Error { case noCode, badResponse(String) }
@@ -72,6 +88,7 @@ public actor Auth {
 
         let redirect: String
         var loopbackCode: Task<String, Error>?
+        #if os(macOS)
         if client.usesLoopback {
             let (port, code) = try await Loopback.start()
             redirect = "http://127.0.0.1:\(port)"
@@ -79,6 +96,9 @@ public actor Auth {
         } else {
             redirect = "\(client.reversedClientScheme):/oauth2redirect"
         }
+        #else
+        redirect = "\(client.reversedClientScheme):/oauth2redirect"
+        #endif
         var auth = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
         auth.queryItems = [
             .init(name: "client_id", value: client.client_id),
@@ -93,7 +113,7 @@ public actor Auth {
         ] + (email.map { [.init(name: "login_hint", value: $0)] } ?? [])
         let code: String
         if let loopbackCode {
-            await MainActor.run { _ = NSWorkspace.shared.open(auth.url!) }
+            await Platform.open(auth.url!)
             code = try await loopbackCode.value
         } else {
             code = try await WebAuth.code(from: auth.url!, scheme: client.reversedClientScheme)
@@ -159,10 +179,18 @@ final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
     }
 
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated { NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor() }
+        MainActor.assumeIsolated {
+            #if os(macOS)
+            NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
+            #else
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            return scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.first.map(UIWindow.init(windowScene:)) ?? ASPresentationAnchor()
+            #endif
+        }
     }
 }
 
+#if os(macOS)
 // One-shot HTTP listener on 127.0.0.1 that captures Google's ?code= redirect.
 enum Loopback {
     /// Serves 127.0.0.1 until a request carries Google's `code` or `error`. Browser preconnects,
@@ -221,6 +249,8 @@ enum Loopback {
     }
 }
 
+#endif
+
 /// Login tokens in a file only this user can read (0600, directory 0700), like gcloud and gh keep theirs.
 /// ponytail: not the Keychain, because NMail is ad-hoc signed and every rebuild loses its Keychain grant;
 /// move back to the Keychain if the app ever ships with a stable signing identity.
@@ -257,7 +287,12 @@ public enum Secrets {
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let tmp = dir.appending(path: ".secrets.\(UUID().uuidString)")
-        guard FileManager.default.createFile(atPath: tmp.path, contents: try JSONEncoder().encode(all), attributes: [.posixPermissions: 0o600]) else {
+        var attributes: [FileAttributeKey: Any] = [.posixPermissions: 0o600]
+        #if os(iOS)
+        // Readable by a foreground sync after the first unlock, never before it.
+        attributes[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
+        #endif
+        guard FileManager.default.createFile(atPath: tmp.path, contents: try JSONEncoder().encode(all), attributes: attributes) else {
             throw AuthError.badResponse("Couldn't save the login to \(url.path).")
         }
         _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)

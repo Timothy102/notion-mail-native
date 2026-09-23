@@ -4,7 +4,7 @@ import Foundation
 public enum SyncLog {
     private static let lock = NSLock()
     private static let url: URL = {
-        let dir = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/NMail")
+        let dir = URL.libraryDirectory.appending(path: "Logs/NMail")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appending(path: "sync.log")
     }()

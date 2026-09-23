@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import os
 
@@ -38,7 +37,7 @@ extension Sync {
                   let sized = GoogleUserinfo.sizedPicture(picture) else { return }
             let (data, resp) = try await URLSession.shared.data(from: sized)
             guard (resp as? HTTPURLResponse)?.statusCode == 200,
-                  let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:])
+                  let png = Platform.png(data)
             else { throw GmailError.http(status: (resp as? HTTPURLResponse)?.statusCode ?? 0, body: "profile photo") }
             try FileManager.default.createDirectory(at: avatarURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try png.write(to: avatarURL, options: .atomic)

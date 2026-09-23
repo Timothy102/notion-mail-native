@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import GRDB
 import Observation
@@ -138,9 +137,9 @@ public final class AccountManager {
         apps[email]?.account?.name ?? registry.names[email] ?? email
     }
 
-    public func avatar(of email: String) -> NSImage? {
+    public func avatar(of email: String) -> PlatformImage? {
         if let app = apps[email] { return app.avatarImage }
-        return storage.flatMap { NSImage(contentsOf: $0.avatar(email)) }
+        return storage.flatMap { Platform.image(contentsOf: $0.avatar(email)) }
     }
 
     /// Google sign-in for another account (the chooser is shown), then switches to it.

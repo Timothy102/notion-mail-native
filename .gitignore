@@ -5,3 +5,8 @@ design/ref/
 .build-workflow.js
 snapshots/
 design/snaps/
+
+# iOS: project.yml is the source of truth (xcodegen generate)
+ios/NMail.xcodeproj/
+ios/build/
+ios/NMailPhone/Info.plist

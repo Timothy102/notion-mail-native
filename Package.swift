@@ -3,7 +3,8 @@ import PackageDescription
 
 let package = Package(
     name: "Mail",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v15), .iOS(.v18)],
+    products: [.library(name: "MailCore", targets: ["MailCore"])],
     dependencies: [.package(url: "https://github.com/groue/GRDB.swift", from: "7.9.0")],
     targets: [
         .target(name: "MailCore", dependencies: [.product(name: "GRDB", package: "GRDB.swift")]),
