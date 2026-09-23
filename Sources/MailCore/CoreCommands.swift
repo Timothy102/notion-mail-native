@@ -96,7 +96,7 @@ extension AppState {
                     keywords: ["appearance"]) { [unowned self] in theme = theme == .dark ? .light : .dark },
             Command(id: "misc.themeSystem", title: "Set theme · System", group: .misc, icon: "circle.lefthalf.filled", keywords: ["appearance"]) { [unowned self] in theme = .system },
             Command(id: "misc.settings", title: "Settings", group: .misc, icon: "gearshape", shortcuts: ["cmd+,"],
-                    keywords: ["preferences"]) { [unowned self] in settings = .inbox },
+                    keywords: ["preferences"]) { [unowned self] in settings = .account },
         ])
     }
 

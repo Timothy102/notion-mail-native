@@ -53,16 +53,27 @@ struct Sidebar: View {
 
     private var accountRow: some View {
         HStack(spacing: 0) {
-            Avatar(name: app.account?.name ?? "?", size: 20, fill: Theme.accent)
-                .padding(.leading, 18)
-            Text(app.account?.name ?? "")
-                .textStyle(.bodyMedium)
-                .lineLimit(1)
-                .padding(.leading, 6)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Theme.iconSecondary)
-                .padding(.leading, 6)
+            Button { app.isAccountMenuOpen.toggle() } label: {
+                HStack(spacing: 0) {
+                    Avatar(name: app.account?.name ?? "?", size: 20, fill: Theme.accent)
+                    Text(app.account?.name ?? app.account?.email ?? "")
+                        .textStyle(.bodyMedium)
+                        .lineLimit(1)
+                        .padding(.leading, 6)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.iconSecondary)
+                        .padding(.leading, 6)
+                }
+                .padding(.horizontal, 6)
+                .frame(height: 30)
+                .background(app.isAccountMenuOpen ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous))
+                .hoverFill()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 12)
+            .help(app.account?.email ?? "Account")
             Spacer(minLength: 8)
             IconButton(systemName: "square.and.pencil", glyph: Theme.Metrics.iconMedium, help: "Compose") {
                 app.commands.run("inbox.compose")
@@ -99,7 +110,7 @@ struct Sidebar: View {
         HStack(spacing: 4) {
             SyncIndicator().padding(.leading, 6)
             Spacer(minLength: 8)
-            IconButton(systemName: "gearshape", help: "Settings") { app.settings = .inbox }
+            IconButton(systemName: "gearshape", help: "Settings") { app.settings = .account }
             IconButton(systemName: "questionmark.circle", help: "Shortcuts") { app.settings = .shortcuts }
         }
         .padding(.horizontal, 12)

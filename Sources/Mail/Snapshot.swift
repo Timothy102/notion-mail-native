@@ -73,7 +73,11 @@ enum Snapshot {
         case "palette": app.palette = Launch.env["MAIL_PALETTE"] == "search" ? .search : .commands
         case "search": app.search(Launch.env["MAIL_QUERY"] ?? "helio")
         case "empty": app.go(to: .spam)
-        case "settings": app.settings = .signature
+        case "settings", "settings-signature": app.settings = .signature
+        case "settings-account": app.settings = .account
+        case "settings-appearance": app.settings = .appearance
+        case "settings-shortcuts": app.settings = .shortcuts
+        case "account-menu": app.isAccountMenuOpen = true
         case "syncing":
             try? app.store.deleteMessages(ids: (try? app.store.db.read { try Message.fetchAll($0).map(\.id) }) ?? [])
             for draft in (try? app.store.db.read(Store.drafts)) ?? [] { try? app.store.deleteDraft(id: draft.id) }

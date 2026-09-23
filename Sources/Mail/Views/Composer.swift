@@ -55,7 +55,7 @@ final class ComposeModel {
     var identity: SendAs? { identities.first { $0.email.lowercased() == draft.from.email.lowercased() } }
 
     func choose(_ identity: SendAs) {
-        draft.switchIdentity(to: identity, from: self.identity)
+        draft.switchIdentity(to: identity, signature: (try? app?.store.db.read { try Signature.text(for: identity, db: $0) }) ?? "")
     }
 
     func switchMode(_ mode: ComposeDraft.Mode) {
@@ -506,7 +506,7 @@ private struct ComposeBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            MailTextView(text: $model.draft.body, placeholder: placeholder, focusOnAppear: focusOnAppear)
+            MailTextView(text: $model.draft.body, placeholder: placeholder, signature: model.draft.signature, focusOnAppear: focusOnAppear)
             if let quoted = model.draft.quoted {
                 Button { model.showsQuoted.toggle() } label: {
                     Image(systemName: "ellipsis")
@@ -896,11 +896,12 @@ private struct SuggestionMenu: View {
 
 // MARK: - Body text view
 
-/// Plain-text editor on NSTextView: 14/24 mail body, grey "-- " signature delimiter, a
-/// placeholder while nothing is typed, and a height that follows the text.
+/// Plain-text editor on NSTextView: 14/24 mail body, grey "-- " delimiter lines, a
+/// placeholder while nothing but the signature is there, and a height that follows the text.
 struct MailTextView: NSViewRepresentable {
     @Binding var text: String
     var placeholder = ""
+    var signature = ""
     var focusOnAppear = false
     var minHeight: CGFloat = TextStyle.mailBody.lineHeight
 
@@ -922,6 +923,7 @@ struct MailTextView: NSViewRepresentable {
         view.selectedTextAttributes = [.backgroundColor: NSColor(Theme.textSelection)]
         view.typingAttributes = BodyTextView.baseAttributes
         view.placeholder = placeholder
+        view.signature = signature
         view.delegate = context.coordinator
         view.string = text
         view.restyle()
@@ -942,6 +944,7 @@ struct MailTextView: NSViewRepresentable {
     func updateNSView(_ view: BodyTextView, context: Context) {
         context.coordinator.parent = self
         view.placeholder = placeholder
+        view.signature = signature
         if view.string != text {
             view.string = text
             view.restyle()
@@ -975,6 +978,9 @@ final class BodyTextView: NSTextView {
     var placeholder = "" {
         didSet { if placeholder != oldValue { needsDisplay = true } }
     }
+    var signature = "" {
+        didSet { if signature != oldValue { needsDisplay = true } }
+    }
 
     static var baseAttributes: [NSAttributedString.Key: Any] {
         let style = TextStyle.mailBody
@@ -1005,7 +1011,7 @@ final class BodyTextView: NSTextView {
 
     private var showsPlaceholder: Bool {
         guard !placeholder.isEmpty else { return false }
-        let typed = string.components(separatedBy: "\n\(ComposeDraft.signatureDelimiter)\n").first ?? string
+        let typed = signature.isEmpty ? string : string.replacingOccurrences(of: ComposeDraft.signatureBlock(signature), with: "")
         return typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 

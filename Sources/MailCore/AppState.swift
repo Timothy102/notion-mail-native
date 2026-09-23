@@ -5,7 +5,9 @@ public enum ThemePreference: String, Sendable, CaseIterable { case system, light
 
 public enum PaletteMode: Sendable, Hashable { case commands, search }
 
-public enum SettingsPage: String, Sendable, CaseIterable { case inbox = "Inbox", signature = "Signature", integrations = "Integrations", shortcuts = "Shortcuts" }
+public enum SettingsPage: String, Sendable, CaseIterable {
+    case account = "Account", signature = "Signature", appearance = "Appearance", shortcuts = "Keyboard shortcuts", integrations = "Integrations"
+}
 
 public struct ComposeRequest: Identifiable, Sendable, Hashable {
     public enum Kind: Sendable, Hashable {
@@ -35,6 +37,8 @@ public final class AppState {
     public var isDemo: Bool { gmail == nil }
 
     public var account: Account?
+    /// nil until the Keychain has been checked; demo mode is always signed in.
+    public var isSignedIn: Bool?
     public var syncStatus: SyncStatus = .idle
     /// Until the first backfill completes an empty list means "not synced yet", not "no mail".
     public var isAwaitingFirstSync = false
@@ -59,9 +63,14 @@ public final class AppState {
     public var compose: ComposeRequest?
     public var settings: SettingsPage?
     public var isLabelPickerOpen = false
+    public var isAccountMenuOpen = false
     public var notionPicker: NotionPickerRequest?
     public var isSidebarVisible = true
-    public var theme: ThemePreference = .system
+    /// Remembered across launches outside demo mode.
+    public var theme: ThemePreference = .system {
+        didSet { if !isDemo { UserDefaults.standard.set(theme.rawValue, forKey: Self.themeKey) } }
+    }
+    static let themeKey = "appearance.theme"
     public private(set) var toast: Toast?
 
     public init(store: Store, gmail: GmailClient?) {
@@ -69,6 +78,8 @@ public final class AppState {
         self.gmail = gmail
         actions = MailActions(store: store, gmail: gmail)
         account = try? store.db.read(Store.account)
+        if gmail == nil { isSignedIn = true }
+        else { theme = UserDefaults.standard.string(forKey: Self.themeKey).flatMap(ThemePreference.init(rawValue:)) ?? .system }
         actions.onToast = { [weak self] in self?.show($0) }
         registerCoreCommands()
         registerIntegrationCommands()
@@ -165,6 +176,7 @@ public final class AppState {
     @discardableResult
     public func dismissTopmost() -> Bool {
         if palette != nil { palette = nil }
+        else if isAccountMenuOpen { isAccountMenuOpen = false }
         else if notionPicker != nil { notionPicker = nil }
         else if isLabelPickerOpen { isLabelPickerOpen = false }
         else if settings != nil { settings = nil }

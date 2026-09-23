@@ -27,7 +27,7 @@ final class ComposeTests: XCTestCase {
         XCTAssertEqual(d.threadId, m.threadId)
         XCTAssertEqual(d.to.map(\.email), [m.sender.email])
         XCTAssertFalse(d.cc.contains { $0.email == Fixtures.me.email })
-        XCTAssertTrue(d.body.contains("\n-- \nTim Cvetko"))
+        XCTAssertEqual(d.body, "\n\nMy kindest,\nTim Cvetko")
         XCTAssertTrue(d.subject.hasPrefix("Re:"))
         XCTAssertTrue(d.isPristine)
 
@@ -37,11 +37,27 @@ final class ComposeTests: XCTestCase {
 
     func testInsertGoesAboveSignature() {
         var draft = ComposeDraft(mode: .new, from: EmailAddress(name: nil, email: "me@x.com"))
-        draft.body = "\n\n-- \nTim"
+        draft.sign("My kindest,\nTim")
+        XCTAssertEqual(draft.typedText, "")
         draft.insert("Standup · 9:30")
-        XCTAssertEqual(draft.body, "Standup · 9:30\n\n-- \nTim")
+        XCTAssertEqual(draft.body, "Standup · 9:30\n\nMy kindest,\nTim")
         draft.insert("Thanks")
-        XCTAssertEqual(draft.body, "Standup · 9:30\n\nThanks\n\n-- \nTim")
+        XCTAssertEqual(draft.body, "Standup · 9:30\n\nThanks\n\nMy kindest,\nTim")
+        XCTAssertEqual(draft.typedText, "Standup · 9:30\n\nThanks")
+    }
+
+    func testSignatureSourcesLocalThenGmailThenDefault() throws {
+        let app = try demoApp()
+        let (primary, helio) = try app.store.db.read { db in (try Store.sendAs(db)[0], try Store.sendAs(db)[1]) }
+        XCTAssertEqual(try app.store.db.read { try Signature.text(for: primary, db: $0) }, Signature.defaultText)
+        var blank = helio
+        blank.signature = ""
+        XCTAssertEqual(try app.store.db.read { try Signature.text(for: blank, db: $0) }, Signature.defaultText)
+        try app.store.saveLocalSignature("Cheers,\nTim\n", for: helio)
+        XCTAssertEqual(try app.store.db.read { try Signature.text(for: helio, db: $0) }, "Cheers,\nTim")
+        XCTAssertTrue(try app.store.db.read(Store.sendAs)[1].signature.contains("Founder, Helio"), "local save must not touch the Gmail copy")
+        let d = try app.store.db.read { try ComposeDraft.make(.new(to: []), db: $0, fallbackFrom: Fixtures.me, signOnReplies: true) }
+        XCTAssertEqual(d.body, "\n\n" + Signature.defaultText)
     }
 
     func testSwitchingModeAndIdentityKeepsTypedText() throws {
@@ -56,10 +72,12 @@ final class ComposeTests: XCTestCase {
         XCTAssertEqual(d.typedText, "Sounds good.")
 
         let identities = try app.store.db.read(Store.sendAs)
-        d.switchIdentity(to: identities[1], from: identities[0])
+        let helioSignature = try app.store.db.read { try Signature.text(for: identities[1], db: $0) }
+        d.switchIdentity(to: identities[1], signature: helioSignature)
         XCTAssertEqual(d.from.email, "tim@helio.dev")
         XCTAssertTrue(d.body.contains("Founder, Helio"))
-        XCTAssertFalse(d.body.contains("calmer inbox"))
+        XCTAssertFalse(d.body.contains("My kindest"))
+        XCTAssertEqual(d.typedText, "Sounds good.")
     }
 
     func testContactsRankPeopleYouWriteTo() throws {
@@ -113,5 +131,22 @@ final class ComposeTests: XCTestCase {
     func testSignatureHTMLRoundTrip() {
         XCTAssertEqual(Outbox.signatureHTML(fromText: "Tim <CEO>\nHelio\n"), "Tim &lt;CEO&gt;<br>Helio")
         XCTAssertEqual(MIME.plainText(fromHTML: Outbox.signatureHTML(fromText: "Tim\nHelio")), "Tim\nHelio")
+    }
+}
+
+@MainActor
+final class SessionTests: XCTestCase {
+    func testSignOutClearsStoreAndReturnsToSignIn() async throws {
+        let store = try Store()
+        try Fixtures.seed(store)
+        let app = AppState(store: store, gmail: nil)
+        app.isAccountMenuOpen = true
+        await app.signOut()
+        XCTAssertEqual(app.isSignedIn, false)
+        XCTAssertNil(app.account)
+        XCTAssertFalse(app.isAccountMenuOpen)
+        let (messages, account) = try await store.db.read { (try Message.fetchCount($0), try Store.account($0)) }
+        XCTAssertEqual(messages, 0)
+        XCTAssertNil(account)
     }
 }
