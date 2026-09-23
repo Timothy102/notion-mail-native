@@ -41,6 +41,9 @@ enum Theme {
     static let rowSelectedHover = Color(0x2383E2, 0.21, dark: 0x2383E2, 0.21)
     static let markBackground = Color(0xE7F3F8, dark: 0x1B2E41)
     static let skeleton = Color(0xF1F1EF, dark: 0x373737)
+    /// The brighter band that sweeps across skeleton bars.
+    static let skeletonHighlight = Color(0xFAFAF9, dark: 0x434343)
+    static let progressTrack = Color(0x2383E2, 0.12, dark: 0x2383E2, 0.18)
     static let textSelection = Color(0x2383E2, 0.28, dark: 0x2383E2, 0.28)
 
     // MARK: Borders

@@ -93,6 +93,17 @@ enum Snapshot {
             for draft in (try? app.store.db.read(Store.drafts)) ?? [] { try? app.store.deleteDraft(id: draft.id) }
             app.isAwaitingFirstSync = true
             app.syncStatus = .backfilling(fetched: 1_240, total: 4_810)
+        case "loading", "loading-empty", "loading-indeterminate":
+            let keep = screen == "loading" ? Set(((try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []).prefix(3).map(\.id)) : []
+            let doomed = (try? app.store.db.read { try Message.fetchAll($0) })?.filter { !keep.contains($0.threadId) }.map(\.id) ?? []
+            try? app.store.deleteMessages(ids: doomed)
+            for draft in (try? app.store.db.read(Store.drafts)) ?? [] { try? app.store.deleteDraft(id: draft.id) }
+            app.isAwaitingFirstSync = screen != "loading"
+            app.syncStatus = screen == "loading-indeterminate" ? .backfilling(fetched: 0, total: 0)
+                : .backfilling(fetched: screen == "loading" ? 1_240 : 180, total: 4_810)
+        case "synced":
+            app.syncStatus = .backfilling(fetched: 4_800, total: 4_810)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { app.syncStatus = .idle }
         case "offline": app.syncStatus = .offline
         case "syncfailed": app.syncStatus = .failed("Gmail 503: Backend Error")
         case "integrations": app.settings = .integrations

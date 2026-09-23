@@ -16,9 +16,17 @@ struct InboxList: View {
     var body: some View {
         GeometryReader { geo in
             let layout = RowLayout(paneWidth: geo.size.width, windowWidth: geo.size.width + (app.isSidebarVisible ? Theme.Metrics.sidebarWidth : 0))
+            let listHeight = geo.size.height - Theme.Metrics.paneHeaderHeight
             VStack(spacing: 0) {
                 header
-                content(layout)
+                    .overlay(alignment: .bottom) {
+                        if isLoading {
+                            LinearProgressBar(fraction: app.syncStatus.backfillFraction).transition(.opacity)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.5), value: isLoading)
+                    .zIndex(1)
+                content(layout, height: listHeight)
             }
         }
         .overlay(alignment: .top) {
@@ -55,15 +63,17 @@ struct InboxList: View {
     // MARK: Rows
 
     @ViewBuilder
-    private func content(_ layout: RowLayout) -> some View {
+    private func content(_ layout: RowLayout, height: CGFloat) -> some View {
         if let error = threads.error {
             EmptyState(title: "Couldn't load mail", message: error.localizedDescription, art: false) {
                 let box = app.mailbox
                 threads.observe(app.store) { try Store.threads($0, in: box) }
             }
-        } else if !threads.isLoaded || (threads.value.isEmpty && app.isAwaitingFirstSync) {
-            SkeletonRows(senderX: layout.senderX, subjectX: layout.subjectX).padding(.top, Theme.Metrics.listTopInset)
-            Spacer(minLength: 0)
+        } else if !threads.isLoaded || (filtered.isEmpty && isLoading) {
+            SkeletonRows(layout: layout, count: skeletonCount(height - Theme.Metrics.listTopInset))
+                .padding(.top, Theme.Metrics.listTopInset)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .clipped()
         } else if filtered.isEmpty {
             if unreadOnly, !threads.value.isEmpty {
                 EmptyState(title: "No unread mail", message: "Everything in \(title) has been read.")
@@ -71,11 +81,26 @@ struct InboxList: View {
                 EmptyState(title: "No mail here!", message: "Rest easy, no mail carriers in sight.")
             }
         } else {
-            list(layout)
+            list(layout, height: height)
         }
     }
 
-    private func list(_ layout: RowLayout) -> some View {
+    /// First sync (or a resync) is still filling the store, so the list isn't the whole story yet.
+    private var isLoading: Bool { app.syncStatus.isBackfilling || app.isAwaitingFirstSync }
+
+    private func skeletonCount(_ height: CGFloat) -> Int {
+        max(0, Int((height / Theme.Metrics.rowHeight).rounded(.up)))
+    }
+
+    /// Height of the real rows and group headers, to know how many skeletons fill the rest of the pane.
+    private func rowsHeight(_ groups: [Group]) -> CGFloat {
+        groups.reduce(Theme.Metrics.listTopInset) { sum, group in
+            sum + (group.title == nil ? 0 : Theme.Metrics.groupHeaderHeight)
+                + (collapsedGroups.contains(group.id) ? 0 : CGFloat(group.threads.count) * Theme.Metrics.rowHeight)
+        }
+    }
+
+    private func list(_ layout: RowLayout, height: CGFloat) -> some View {
         let byId = Dictionary(uniqueKeysWithValues: labels.value.map { ($0.id, $0) })
         let groups = self.groups
         return ScrollViewReader { proxy in
@@ -109,10 +134,15 @@ struct InboxList: View {
                             }
                         }
                     }
+                    if isLoading {
+                        SkeletonRows(layout: layout, count: max(3, skeletonCount(height - rowsHeight(groups))))
+                            .transition(.opacity)
+                    }
                 }
                 .padding(.top, Theme.Metrics.listTopInset)
                 .padding(.bottom, 24)
                 .animation(Theme.Motion.standard, value: visibleIds)
+                .animation(.easeOut(duration: 0.4), value: isLoading)
             }
             .onChange(of: app.focusedThreadId) { _, id in
                 guard let id, id != mouseFocusId else { return }
@@ -163,6 +193,14 @@ struct InboxList: View {
             return ("tag", LabelColor(named: labels.value.first { $0.id == id }?.color).dot)
         }
         return (app.mailbox.symbol, app.mailbox == .inbox ? Theme.inboxRed : Theme.iconSecondary)
+    }
+}
+
+extension SyncStatus {
+    /// Backfill progress 0...1, or nil while the total is still unknown.
+    var backfillFraction: Double? {
+        guard case .backfilling(let fetched, let total) = self, total > 0 else { return nil }
+        return Double(fetched) / Double(total)
     }
 }
 
