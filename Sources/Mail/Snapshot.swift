@@ -73,6 +73,7 @@ enum Snapshot {
                 ComposeModel.snapshotShowsQuoted = true
                 app.commands.run("thread.replyAll")
             }
+        case "signin": app.isSignedIn = false
         case "compose": app.compose = ComposeRequest(.new(to: []))
         case "compose-draft":
             if let draft = (try? app.store.db.read(Store.drafts))?.first { app.compose = ComposeRequest(.draft(id: draft.id)) }
