@@ -90,7 +90,8 @@ struct Sidebar: View {
 
     private var footer: some View {
         HStack(spacing: 4) {
-            Spacer()
+            SyncIndicator().padding(.leading, 6)
+            Spacer(minLength: 8)
             IconButton(systemName: "gearshape", help: "Settings") { app.settings = .inbox }
             IconButton(systemName: "questionmark.circle", help: "Shortcuts") { app.settings = .shortcuts }
         }

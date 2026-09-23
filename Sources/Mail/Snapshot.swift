@@ -33,6 +33,13 @@ enum Snapshot {
         case "search": app.search("offsite")
         case "empty": app.go(to: .spam)
         case "settings": app.settings = .signature
+        case "syncing":
+            try? app.store.deleteMessages(ids: (try? app.store.db.read { try Message.fetchAll($0).map(\.id) }) ?? [])
+            for draft in (try? app.store.db.read(Store.drafts)) ?? [] { try? app.store.deleteDraft(id: draft.id) }
+            app.isAwaitingFirstSync = true
+            app.syncStatus = .backfilling(fetched: 1_240, total: 4_810)
+        case "offline": app.syncStatus = .offline
+        case "syncfailed": app.syncStatus = .failed("Gmail 503: Backend Error")
         default: break
         }
     }

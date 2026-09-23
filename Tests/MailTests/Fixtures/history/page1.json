@@ -1,0 +1,14 @@
+{
+  "history": [
+    {"id": "101", "messages": [{"id": "m1", "threadId": "t1"}],
+     "labelsRemoved": [{"message": {"id": "m1", "threadId": "t1", "labelIds": ["INBOX"]}, "labelIds": ["UNREAD"]}]},
+    {"id": "102", "messages": [{"id": "m1", "threadId": "t1"}],
+     "labelsAdded": [{"message": {"id": "m1", "threadId": "t1", "labelIds": ["INBOX", "STARRED"]}, "labelIds": ["STARRED"]}]},
+    {"id": "103", "messages": [{"id": "m3", "threadId": "t1"}],
+     "messagesAdded": [{"message": {"id": "m3", "threadId": "t1", "labelIds": ["INBOX", "UNREAD"]}}]},
+    {"id": "104", "messages": [{"id": "m4", "threadId": "t4"}],
+     "messagesAdded": [{"message": {"id": "m4", "threadId": "t4", "labelIds": ["DRAFT"]}}]}
+  ],
+  "nextPageToken": "p2",
+  "historyId": "104"
+}

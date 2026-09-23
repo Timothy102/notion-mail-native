@@ -1,0 +1,15 @@
+{
+  "history": [
+    {"id": "105", "messages": [{"id": "m4", "threadId": "t4"}],
+     "messagesDeleted": [{"message": {"id": "m4", "threadId": "t4"}}]},
+    {"id": "106", "messages": [{"id": "m2", "threadId": "t2"}],
+     "messagesDeleted": [{"message": {"id": "m2", "threadId": "t2"}}]},
+    {"id": "107", "messages": [{"id": "m1", "threadId": "t1"}],
+     "labelsAdded": [{"message": {"id": "m1", "threadId": "t1"}, "labelIds": ["Label_7"]}]},
+    {"id": "108", "messages": [{"id": "m1", "threadId": "t1"}],
+     "labelsRemoved": [{"message": {"id": "m1", "threadId": "t1"}, "labelIds": ["Label_7", "INBOX"]}]},
+    {"id": "109", "messages": [{"id": "m9", "threadId": "t9"}],
+     "labelsAdded": [{"message": {"id": "m9", "threadId": "t9", "labelIds": ["STARRED"]}, "labelIds": ["STARRED"]}]}
+  ],
+  "historyId": "109"
+}

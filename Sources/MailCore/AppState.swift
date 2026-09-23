@@ -7,8 +7,6 @@ public enum PaletteMode: Sendable, Hashable { case commands, search }
 
 public enum SettingsPage: String, Sendable, CaseIterable { case inbox = "Inbox", signature = "Signature", integrations = "Integrations", shortcuts = "Shortcuts" }
 
-public enum SyncStatus: Sendable, Equatable { case idle, syncing, failed(String) }
-
 public struct ComposeRequest: Identifiable, Sendable, Hashable {
     public enum Kind: Sendable, Hashable {
         case new(to: [EmailAddress])
@@ -38,6 +36,10 @@ public final class AppState {
 
     public var account: Account?
     public var syncStatus: SyncStatus = .idle
+    /// Until the first backfill completes an empty list means "not synced yet", not "no mail".
+    public var isAwaitingFirstSync = false
+    @ObservationIgnored var syncLoop: Task<Void, Never>?
+    @ObservationIgnored var syncTick: AsyncStream<Void>.Continuation?
 
     // Navigation
     public private(set) var mailbox: Mailbox = .inbox
@@ -163,26 +165,6 @@ public final class AppState {
     public func replyTarget(threadId: String) -> Message? {
         try? store.db.read { db in
             try Store.threadDetail(db, id: threadId)?.messages.last { !$0.isDraft }
-        }
-    }
-
-    /// Backfill or history sync now, then every 30 s. No-op in demo mode.
-    public func startSync() {
-        guard let gmail else { return }
-        let sync = Sync(gmail: gmail, store: store)
-        Task { [weak self] in
-            while !Task.isCancelled {
-                self?.syncStatus = .syncing
-                do {
-                    try await sync.run()
-                    self?.syncStatus = .idle
-                    self?.account = try? await sync.store.db.read(Store.account)
-                } catch {
-                    self?.syncStatus = .failed(error.localizedDescription)
-                }
-                try? await Task.sleep(for: .seconds(30))
-                if self == nil { return }
-            }
         }
     }
 }
