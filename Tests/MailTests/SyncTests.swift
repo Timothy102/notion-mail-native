@@ -125,8 +125,11 @@ final class SyncTests: XCTestCase {
         var sync = Sync(gmail: StubGmail.client, store: store)
         let progress = Progress()
         sync.progress = { fetched, total in progress.record(fetched, total) }
+        let requestsAtAccount = Progress()
+        sync.onAccount = { _ in requestsAtAccount.record(StubGmail.log.filter { $0.hasPrefix("GET messages") }.count, 0) }
         try await sync.run()
 
+        XCTAssertEqual(requestsAtAccount.values.first?.0, 0, "the profile is published before any mail is listed or fetched")
         XCTAssertEqual(try store.get("historyId"), "500", "resync restarts from the profile's history id")
         try await store.db.read { db in
             XCTAssertEqual(try Message.fetchAll(db).map(\.id).sorted(), ["m1", "m5"], "m2 is gone from Gmail, m1 isn't refetched")

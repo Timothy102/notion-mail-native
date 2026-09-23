@@ -19,12 +19,16 @@ public enum SyncStatus: Sendable, Equatable {
 /// Pulls Gmail into the Store: a backfill of the last `backfillMonths` on first run, then `history.list` deltas.
 public struct Sync: Sendable {
     public static let backfillMonthsKey = "backfillMonths"
-    public static let defaultBackfillMonths = 3
+    public static let defaultBackfillMonths = 12
+    /// Gmail allows ~50 messages.get per second per user (250 quota units at 5 each); 429s back off in GmailClient.
+    static let fetchConcurrency = 40
 
     public let gmail: GmailClient
     public let store: Store
     /// Messages fetched so far and the total, while backfilling.
     public var progress: @Sendable (_ fetched: Int, _ total: Int) async -> Void = { _, _ in }
+    /// Called as soon as the profile is known, before any mail is fetched.
+    public var onAccount: @Sendable (Account) async -> Void = { _ in }
 
     public init(gmail: GmailClient, store: Store) {
         self.gmail = gmail
@@ -41,7 +45,9 @@ public struct Sync: Sendable {
         let sendAs = try await gmail.sendAs()
         let primary = sendAs.first { $0.isPrimary == true } ?? sendAs.first { $0.sendAsEmail.lowercased() == profile.emailAddress.lowercased() }
         let name = primary?.displayName.flatMap { $0.isEmpty ? nil : $0 } ?? profile.emailAddress
-        try store.save(account: Account(email: profile.emailAddress, name: name))
+        let account = Account(email: profile.emailAddress, name: name)
+        try store.save(account: account)
+        await onAccount(account)
         try store.save(sendAs: sendAs.map {
             SendAs(email: $0.sendAsEmail, displayName: $0.displayName ?? "", signature: $0.signature ?? "",
                    isDefault: $0.isDefault ?? false, isPrimary: $0.isPrimary ?? false, replyTo: $0.replyToAddress)
@@ -67,38 +73,46 @@ public struct Sync: Sendable {
         }
     }
 
-    /// Lists every message id in the window first (so progress has a total), drops local messages in the
-    /// window that Gmail no longer has, then fetches what is missing newest first, 100 at a time.
+    /// Streams the inbox first (any age), then everything in the window, newest first: each listed page is
+    /// fetched and stored right away so the list fills while the backfill continues.
+    /// Afterwards, local messages in the window that Gmail no longer lists are dropped.
     /// `historyId` is taken before listing, so changes made meanwhile arrive through the next history sync.
     private func backfill(historyId: String) async throws {
         let since = Calendar.current.date(byAdding: .month, value: -backfillMonths, to: .now) ?? .now
-        var ids: [String] = []
-        var pageToken: String?
-        repeat {
-            let page = try await gmail.listMessages(q: "after:\(Int(since.timeIntervalSince1970))", pageToken: pageToken,
-                                                    maxResults: 500, includeSpamTrash: true)
-            ids += (page.messages ?? []).map(\.id)
-            pageToken = page.nextPageToken
-        } while pageToken != nil
-
-        let listed = Set(ids)
+        let window = "after:\(Int(since.timeIntervalSince1970))"
         let known = try await store.db.read { db in
             try Message.select(Column("id"), Column("internalDate")).asRequest(of: Row.self).fetchAll(db)
                 .map { (id: $0["id"] as String, date: $0["internalDate"] as Int64) }
         }
-        let cutoff = Int64(since.timeIntervalSince1970 * 1000)
-        try store.deleteMessages(ids: known.filter { $0.date >= cutoff && !listed.contains($0.id) }.map(\.id))
+        var have = Set(known.map(\.id))
+        var listedInWindow = Set<String>()
+        var done = Set<String>()
+        var total = 0
 
-        let knownIds = Set(known.map(\.id))
-        let missing = ids.filter { !knownIds.contains($0) }
-        var fetched = ids.count - missing.count
-        await progress(fetched, ids.count)
-        for start in stride(from: 0, to: missing.count, by: 100) {
-            let chunk = Array(missing[start..<min(start + 100, missing.count)])
-            try ingest(try await gmail.messages(chunk, concurrency: 8))
-            fetched += chunk.count
-            await progress(fetched, ids.count)
+        for (query, isWindow) in [("in:inbox", false), (window, true)] {
+            var pageToken: String?
+            repeat {
+                let page = try await gmail.listMessages(q: query, pageToken: pageToken, maxResults: 500, includeSpamTrash: isWindow)
+                let ids = (page.messages ?? []).map(\.id)
+                if isWindow { listedInWindow.formUnion(ids) }
+                total = max(total, isWindow ? page.resultSizeEstimate ?? 0 : 0, done.count + ids.count)
+                done.formUnion(ids.filter(have.contains))
+                let missing = ids.filter { !have.contains($0) }
+                for start in stride(from: 0, to: missing.count, by: 100) {
+                    let chunk = Array(missing[start..<min(start + 100, missing.count)])
+                    try ingest(try await gmail.messages(chunk, concurrency: Self.fetchConcurrency))
+                    have.formUnion(chunk)
+                    done.formUnion(chunk)
+                    await progress(done.count, max(total, done.count))
+                }
+                if missing.isEmpty { await progress(done.count, max(total, done.count)) }
+                pageToken = page.nextPageToken
+            } while pageToken != nil
         }
+        await progress(done.count, done.count)
+
+        let cutoff = Int64(since.timeIntervalSince1970 * 1000)
+        try store.deleteMessages(ids: known.filter { $0.date >= cutoff && !listedInWindow.contains($0.id) }.map(\.id))
         try store.set("historyId", historyId)
     }
 
@@ -202,6 +216,9 @@ extension AppState {
         guard let gmail, syncLoop == nil else { return }
         isAwaitingFirstSync = (try? store.get("historyId")) == nil
         var sync = Sync(gmail: gmail, store: store)
+        sync.onAccount = { account in
+            await MainActor.run { [weak self] in self?.account = account }
+        }
         sync.progress = { fetched, total in
             await MainActor.run { [weak self] in self?.syncStatus = .backfilling(fetched: fetched, total: total) }
         }
