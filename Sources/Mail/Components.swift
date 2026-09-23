@@ -232,7 +232,7 @@ struct EmptyState: View {
 extension EmptyState {
     /// One bundled 400 × 260 mask, tinted so the ink follows the theme.
     private static func layer(_ name: String, _ color: Color) -> some View {
-        let image = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Art").flatMap(NSImage.init(contentsOf:))
+        let image = Bundle.appResources.url(forResource: name, withExtension: "png", subdirectory: "Art").flatMap(NSImage.init(contentsOf:))
         return Image(nsImage: image ?? NSImage()).resizable().renderingMode(.template).foregroundStyle(color)
     }
 }

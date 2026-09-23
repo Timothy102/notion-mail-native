@@ -207,9 +207,14 @@ extension View {
     }
 }
 
+extension Bundle {
+    /// SwiftPM's Bundle.module only looks beside the .app, where codesign forbids files; installed builds keep it in Resources.
+    static let appResources = Bundle.main.url(forResource: "Mail_Mail", withExtension: "bundle").flatMap(Bundle.init(url:)) ?? .module
+}
+
 private enum BundledFonts {
     static let registered: Bool = {
-        guard let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") else { return false }
+        guard let urls = Bundle.appResources.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") else { return false }
         return urls.allSatisfy { CTFontManagerRegisterFontsForURL($0 as CFURL, .process, nil) }
     }()
 }
