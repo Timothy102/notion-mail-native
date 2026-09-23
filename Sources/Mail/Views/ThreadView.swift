@@ -22,7 +22,7 @@ struct ThreadView: View {
                             messages(detail)
                             bottom(detail)
                         }
-                        .padding(.bottom, 32)
+                        .padding(.bottom, Theme.Metrics.readerBottom)
                         .frame(maxWidth: Theme.Metrics.readerMaxWidth + 2 * Theme.Metrics.readerPadding, alignment: .leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -109,7 +109,7 @@ struct ThreadView: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(EdgeInsets(top: 12, leading: Theme.Metrics.readerPadding, bottom: 16, trailing: Theme.Metrics.readerPadding))
+        .padding(EdgeInsets(top: Theme.Metrics.subjectTop, leading: Theme.Metrics.readerPadding, bottom: Theme.Metrics.subjectBottom, trailing: Theme.Metrics.readerPadding))
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) { Hairline() }
     }
@@ -186,7 +186,7 @@ struct ThreadView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .frame(height: 36)
+                .frame(height: Theme.Metrics.showMoreHeight)
             }
         }
     }
@@ -202,13 +202,13 @@ struct ThreadView: View {
         if let request = app.compose, !request.isFloating, detail.messages.contains(where: { request.targets($0.id) }) {
             InlineReply(request: request).padding(16)
         } else {
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Metrics.replyBarSpacing) {
                 Button { app.commands.run("thread.reply") } label: { ButtonLabel("Reply", "arrowshape.turn.up.left") }
                 Button { app.commands.run("thread.replyAll") } label: { ButtonLabel("Reply all", "arrowshape.turn.up.left.2") }
                 Button { app.commands.run("thread.forward") } label: { ButtonLabel("Forward", "arrowshape.turn.up.right") }
             }
             .buttonStyle(.outline(height: Theme.Metrics.buttonMedium))
-            .padding(.top, 24)
+            .padding(.top, Theme.Metrics.replyBarTop)
             .padding(.horizontal, Theme.Metrics.readerPadding)
         }
     }
@@ -321,7 +321,7 @@ private struct MessageView: View {
             }
             Text(recipients).textStyle(.body).foregroundStyle(Theme.textTertiary).lineLimit(1)
         }
-        .padding(.top, 16)
+        .padding(.top, Theme.Metrics.messageHeaderTop)
         .padding(.horizontal, Theme.Metrics.readerPadding)
         .contentShape(Rectangle())
         .onTapGesture(perform: collapse)
@@ -353,7 +353,7 @@ private struct MessageView: View {
             }
         }
         .padding(.horizontal, Theme.Metrics.readerPadding)
-        .padding(.vertical, 24)
+        .padding(.vertical, Theme.Metrics.messageBodyInset)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

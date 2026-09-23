@@ -62,7 +62,7 @@ struct InboxList: View {
                 threads.observe(app.store) { try Store.threads($0, in: box) }
             }
         } else if !threads.isLoaded || (threads.value.isEmpty && app.isAwaitingFirstSync) {
-            SkeletonRows(senderX: layout.senderX, subjectX: layout.subjectX)
+            SkeletonRows(senderX: layout.senderX, subjectX: layout.subjectX).padding(.top, Theme.Metrics.listTopInset)
             Spacer(minLength: 0)
         } else if filtered.isEmpty {
             if unreadOnly, !threads.value.isEmpty {
@@ -110,6 +110,7 @@ struct InboxList: View {
                         }
                     }
                 }
+                .padding(.top, Theme.Metrics.listTopInset)
                 .padding(.bottom, 24)
                 .animation(Theme.Motion.standard, value: visibleIds)
             }
@@ -347,7 +348,7 @@ struct RowLayout {
     var subjectX: CGFloat { senderX + senderWidth + Theme.Metrics.senderGap }
 }
 
-/// Date-group header (§5.3): label at x 71, hairline at y 48, "Collapse" on hover.
+/// Date-group header (§5.3): label at x 71, hairline at `groupHairlineY`, "Collapse" on hover.
 struct GroupHeader: View {
     let title: String
     var isCollapsed = false
@@ -366,7 +367,7 @@ struct GroupHeader: View {
                 }
             }
             .frame(height: 16)
-            .offset(x: 71, y: 20)
+            .offset(x: 71, y: Theme.Metrics.groupLabelY)
             Hairline()
                 .padding(.leading, 55)
                 .padding(.trailing, 38)
