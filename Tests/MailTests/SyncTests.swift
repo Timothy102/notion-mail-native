@@ -75,6 +75,7 @@ final class SyncTests: XCTestCase {
         try sync.ingest(seed)
         try store.save(labels: [MailLabel(id: "Label_gone", name: "Old", isSystem: false, color: nil)])
         try store.set("historyId", "100")
+        try store.set(Sync.backfilledMonthsKey, String(Sync.defaultBackfillMonths))
         return store
     }
 
