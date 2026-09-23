@@ -376,6 +376,8 @@ struct ThreadRow: View {
     var mergeTop = false
     var mergeBottom = false
     var nextFilled = false
+    var terms: [String] = []
+    var excerpt: String?
     var onHover: ((Bool) -> Void)?
     @Environment(AppState.self) private var app
     @State private var hovering = false
@@ -402,11 +404,11 @@ struct ThreadRow: View {
                 .frame(width: layout.senderWidth, alignment: .leading)
                 .padding(.leading, Theme.Metrics.senderX - (Theme.Metrics.unreadDotCenterX + Theme.Metrics.unreadDotSize / 2))
             SubjectSnippetLayout {
-                Text(thread.subject.isEmpty ? "(no subject)" : thread.subject)
+                MarkedText(text: thread.subject.isEmpty ? "(no subject)" : thread.subject, terms: terms)
                     .textStyle(thread.isUnread ? .listUnread : .list)
                     .foregroundStyle(thread.isUnread ? Theme.textPrimary : Theme.textRead)
                     .lineLimit(1)
-                Text(thread.snippet).textStyle(.listSecondary).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                MarkedText(text: excerpt ?? thread.snippet, terms: terms).textStyle(.listSecondary).foregroundStyle(Theme.textTertiary).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, Theme.Metrics.senderGap)
