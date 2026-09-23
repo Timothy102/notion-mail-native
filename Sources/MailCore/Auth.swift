@@ -39,12 +39,12 @@ public actor Auth {
     private var accessToken: String?
     private var expiry = Date.distantPast
 
-    public var isSignedIn: Bool { Keychain.get("refresh_token") != nil }
+    public var isSignedIn: Bool { Secrets.get("refresh_token") != nil }
 
     /// A valid access token; `refresh` skips the cached one (after a 401).
     public func token(refresh: Bool = false) async throws -> String {
         if !refresh, let accessToken, expiry > .now.addingTimeInterval(60) { return accessToken }
-        guard let refresh = Keychain.get("refresh_token") else { return try await signIn() }
+        guard let refresh = Secrets.get("refresh_token") else { return try await signIn() }
         let client = try OAuthClient.load()
         return try await exchange(client.credentials.merging([
             "refresh_token": refresh, "grant_type": "refresh_token",
@@ -91,7 +91,7 @@ public actor Auth {
     }
 
     public func signOut() {
-        Keychain.delete("refresh_token")
+        Secrets.delete("refresh_token")
         accessToken = nil
     }
 
@@ -103,12 +103,12 @@ public actor Auth {
             .joined(separator: "&").data(using: .utf8)
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-            if form["grant_type"] == "refresh_token" { Keychain.delete("refresh_token") }
+            if form["grant_type"] == "refresh_token" { Secrets.delete("refresh_token") }
             throw AuthError.badResponse(String(decoding: data, as: UTF8.self))
         }
         struct Token: Decodable { let access_token: String; let expires_in: Double; let refresh_token: String? }
         let t = try JSONDecoder().decode(Token.self, from: data)
-        if let r = t.refresh_token { try Keychain.set("refresh_token", r) }
+        if let r = t.refresh_token { try Secrets.set("refresh_token", r) }
         accessToken = t.access_token
         expiry = .now.addingTimeInterval(t.expires_in)
         return t.access_token
@@ -202,31 +202,46 @@ enum Loopback {
     }
 }
 
-public enum Keychain {
-    private static let service = "mail.tim"
+/// Login tokens in a file only this user can read (0600, directory 0700), like gcloud and gh keep theirs.
+/// ponytail: not the Keychain, because NMail is ad-hoc signed and every rebuild loses its Keychain grant;
+/// move back to the Keychain if the app ever ships with a stable signing identity.
+public enum Secrets {
+    private static let lock = NSLock()
+    nonisolated(unsafe) static var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appending(path: "Mail/secrets.json")
 
     public static func get(_ key: String) -> String? {
-        var out: AnyObject?
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                kSecAttrAccount as String: key, kSecReturnData as String: true]
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
-        return String(decoding: d, as: UTF8.self)
+        lock.withLock { read()[key] }
     }
 
     public static func set(_ key: String, _ value: String) throws {
-        delete(key)
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                kSecAttrAccount as String: key, kSecValueData as String: Data(value.utf8)]
-        let status = SecItemAdd(q as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw AuthError.badResponse("Couldn't save the login to the Keychain (\(SecCopyErrorMessageString(status, nil) as String? ?? "\(status)")).")
+        try lock.withLock {
+            var all = read()
+            all[key] = value
+            try write(all)
         }
     }
 
     public static func delete(_ key: String) {
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                kSecAttrAccount as String: key]
-        SecItemDelete(q as CFDictionary)
+        lock.withLock {
+            var all = read()
+            guard all.removeValue(forKey: key) != nil else { return }
+            try? write(all)
+        }
+    }
+
+    private static func read() -> [String: String] {
+        (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: url))) ?? [:]
+    }
+
+    private static func write(_ all: [String: String]) throws {
+        let dir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let tmp = dir.appending(path: ".secrets.\(UUID().uuidString)")
+        guard FileManager.default.createFile(atPath: tmp.path, contents: try JSONEncoder().encode(all), attributes: [.posixPermissions: 0o600]) else {
+            throw AuthError.badResponse("Couldn't save the login to \(url.path).")
+        }
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
     }
 }
 

@@ -55,7 +55,7 @@ public enum NotionError: LocalizedError {
     }
 }
 
-/// Notion REST API with an internal integration token kept in the Keychain. In demo mode it
+/// Notion REST API with an internal integration token kept in the Secrets. In demo mode it
 /// answers from fixtures after a short delay and never touches the network.
 public struct NotionClient: Sendable {
     public static let tokenKey = "notion_token"
@@ -63,7 +63,7 @@ public struct NotionClient: Sendable {
     private let isDemo: Bool
 
     /// Demo mode is connected unless `MAIL_NOTION=off`, which shows the not-connected states.
-    public init(demo: Bool, token: String? = Keychain.get(NotionClient.tokenKey)) {
+    public init(demo: Bool, token: String? = Secrets.get(NotionClient.tokenKey)) {
         isDemo = demo && ProcessInfo.processInfo.environment["MAIL_NOTION"] != "off"
         self.token = demo ? nil : token
     }

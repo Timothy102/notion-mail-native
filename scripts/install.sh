@@ -27,10 +27,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-# A stable identity keeps the Keychain's grant to NMail across rebuilds; ad-hoc signatures change every build,
-# which silently locks the app out of its saved Google login.
-identity="$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')"
-codesign --force --deep --sign "${identity:--}" "$app"
+codesign --force --deep --sign - "$app"
 rm -rf /Applications/NMail.app
 cp -R "$app" /Applications/NMail.app
 echo "Installed /Applications/NMail.app"
