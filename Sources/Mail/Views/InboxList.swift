@@ -61,7 +61,7 @@ struct InboxList: View {
                 let box = app.mailbox
                 threads.observe(app.store) { try Store.threads($0, in: box) }
             }
-        } else if !threads.isLoaded {
+        } else if !threads.isLoaded || (threads.value.isEmpty && app.isAwaitingFirstSync) {
             SkeletonRows(senderX: layout.senderX, subjectX: layout.subjectX)
             Spacer(minLength: 0)
         } else if filtered.isEmpty {
