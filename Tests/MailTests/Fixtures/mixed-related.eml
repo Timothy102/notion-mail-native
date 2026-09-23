@@ -1,0 +1,33 @@
+From: Zoë <zoe@example.com>
+To: tim@example.com
+Subject: Photos and invoice
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix"
+
+preamble is ignored
+--mix
+Content-Type: multipart/related; boundary="rel"
+
+--rel
+Content-Type: text/html; charset=utf-8
+
+<p>Look <img src="cid:logo@x"></p>
+--rel
+Content-Type: image/png
+Content-ID: <logo@x>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--rel--
+--mix
+Content-Type: application/pdf; name="ignored.pdf"
+Content-Disposition: attachment; filename*=UTF-8''ra%C4%8Dun%20%E2%82%AC.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQ=
+--mix
+Content-Type: text/calendar; method=REQUEST; charset=utf-8
+
+BEGIN:VCALENDAR
+END:VCALENDAR
+--mix--

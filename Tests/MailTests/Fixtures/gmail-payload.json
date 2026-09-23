@@ -1,0 +1,8 @@
+{"id":"m1","threadId":"t1","labelIds":["INBOX","UNREAD"],"snippet":"Hi &amp; welcome","internalDate":"1758614400000",
+ "payload":{"partId":"","mimeType":"multipart/mixed","headers":[{"name":"From","value":"Ana Kovač <ana@example.com>"},{"name":"Subject","value":"Welcome 👋"},{"name":"Message-ID","value":"<m1@mail.gmail.com>"}],
+  "body":{"size":0},
+  "parts":[
+   {"partId":"0","mimeType":"multipart/alternative","headers":[],"body":{"size":0},"parts":[
+     {"partId":"0.0","mimeType":"text/plain","headers":[{"name":"Content-Type","value":"text/plain; charset=\"UTF-8\""}],"body":{"size":13,"data":"SGkgJiB3ZWxjb21lIQ"}},
+     {"partId":"0.1","mimeType":"text/html","headers":[{"name":"Content-Type","value":"text/html; charset=\"UTF-8\""}],"body":{"size":20,"data":"PGI-SGk8L2I-IHdlbGNvbWUh"}}]},
+   {"partId":"1","mimeType":"application/pdf","filename":"deck.pdf","headers":[{"name":"Content-Disposition","value":"attachment; filename=\"deck.pdf\""}],"body":{"attachmentId":"ANGjdJ9","size":48213}}]}}

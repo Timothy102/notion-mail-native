@@ -1,5 +1,5 @@
-import SwiftUI
 import CoreText
+import SwiftUI
 
 /// Tokens from design/SPEC.md. Views read colors, type, metrics and motion only from here.
 enum Theme {
@@ -214,6 +214,11 @@ private enum BundledFonts {
 
 enum LabelColor: String, CaseIterable, Sendable {
     case lightGray, gray, brown, orange, yellow, green, blue, purple, pink, red
+
+    /// From a stored `MailLabel.color` name; unknown or nil is lightGray.
+    init(named name: String?) {
+        self = name.flatMap(LabelColor.init(rawValue:)) ?? .lightGray
+    }
 
     var fill: Color {
         switch self {

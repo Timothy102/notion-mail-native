@@ -1,0 +1,21 @@
+From: =?ISO-8859-1?Q?Andr=E9_Pirard?= <andre@example.be>
+To: "Doe, Jane" <jane@example.com>, bob@example.com
+Subject: =?UTF-8?B?Q2Fmw6kgbWVldGluZyDimJU=?=
+ =?UTF-8?Q?_tomorrow?=
+Message-ID: <abc123@example.be>
+References: <root@example.com> <mid@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=iso-8859-1
+Content-Transfer-Encoding: quoted-printable
+
+Caf=E9 at 10? Long line that is soft-=
+wrapped here.
+--alt
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: base64
+
+PHA+Q2Fmw6kgYXQgPGI+MTA8L2I+PzwvcD4=
+--alt--

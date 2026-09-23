@@ -4,7 +4,10 @@ import PackageDescription
 let package = Package(
     name: "Mail",
     platforms: [.macOS(.v15)],
+    dependencies: [.package(url: "https://github.com/groue/GRDB.swift", from: "7.9.0")],
     targets: [
-        .executableTarget(name: "Mail", path: "Sources/Mail", resources: [.copy("Fonts")])
+        .target(name: "MailCore", dependencies: [.product(name: "GRDB", package: "GRDB.swift")]),
+        .executableTarget(name: "Mail", dependencies: ["MailCore", .product(name: "GRDB", package: "GRDB.swift")], resources: [.copy("Fonts")]),
+        .testTarget(name: "MailTests", dependencies: ["MailCore"], resources: [.copy("Fixtures")]),
     ]
 )

@@ -17,10 +17,10 @@ struct OAuthClient: Decodable {
     }
 }
 
-enum AuthError: Error { case noCode, badResponse(String) }
+public enum AuthError: Error { case noCode, badResponse(String) }
 
-actor Auth {
-    static let shared = Auth()
+public actor Auth {
+    public static let shared = Auth()
     static let scopes = [
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.compose",
@@ -31,10 +31,11 @@ actor Auth {
     private var accessToken: String?
     private var expiry = Date.distantPast
 
-    var isSignedIn: Bool { Keychain.get("refresh_token") != nil }
+    public var isSignedIn: Bool { Keychain.get("refresh_token") != nil }
 
-    func token() async throws -> String {
-        if let accessToken, expiry > .now.addingTimeInterval(60) { return accessToken }
+    /// A valid access token; `refresh` skips the cached one (after a 401).
+    public func token(refresh: Bool = false) async throws -> String {
+        if !refresh, let accessToken, expiry > .now.addingTimeInterval(60) { return accessToken }
         guard let refresh = Keychain.get("refresh_token") else { return try await signIn() }
         let client = try OAuthClient.load()
         return try await exchange([
@@ -43,7 +44,7 @@ actor Auth {
         ])
     }
 
-    func signIn() async throws -> String {
+    public func signIn() async throws -> String {
         let client = try OAuthClient.load()
         let verifier = Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64URL
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URL
@@ -70,7 +71,7 @@ actor Auth {
         ])
     }
 
-    func signOut() {
+    public func signOut() {
         Keychain.delete("refresh_token")
         accessToken = nil
     }
@@ -127,10 +128,10 @@ enum Loopback {
     }
 }
 
-enum Keychain {
+public enum Keychain {
     private static let service = "mail.tim"
 
-    static func get(_ key: String) -> String? {
+    public static func get(_ key: String) -> String? {
         var out: AnyObject?
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: key, kSecReturnData as String: true]
@@ -138,23 +139,17 @@ enum Keychain {
         return String(decoding: d, as: UTF8.self)
     }
 
-    static func set(_ key: String, _ value: String) {
+    public static func set(_ key: String, _ value: String) {
         delete(key)
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: key, kSecValueData as String: Data(value.utf8)]
         SecItemAdd(q as CFDictionary, nil)
     }
 
-    static func delete(_ key: String) {
+    public static func delete(_ key: String) {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: key]
         SecItemDelete(q as CFDictionary)
     }
 }
 
-extension Data {
-    var base64URL: String {
-        base64EncodedString().replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-    }
-}
