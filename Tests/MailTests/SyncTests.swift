@@ -201,3 +201,12 @@ private final class Progress: @unchecked Sendable {
     func record(_ a: Int, _ b: Int) { lock.withLock { recorded.append((a, b)) } }
     var values: [(Int, Int)] { lock.withLock { recorded } }
 }
+
+final class AccountNameTests: XCTestCase {
+    func testDisplayNameFromFromHeader() {
+        XCTAssertEqual(Sync.displayName(from: "Tim Cvetko <cvetko.tim@gmail.com>"), "Tim Cvetko")
+        XCTAssertEqual(Sync.displayName(from: "\"Tim Cvetko\" <cvetko.tim@gmail.com>"), "Tim Cvetko")
+        XCTAssertNil(Sync.displayName(from: "cvetko.tim@gmail.com"))
+        XCTAssertNil(Sync.displayName(from: "cvetko.tim@gmail.com <cvetko.tim@gmail.com>"))
+    }
+}

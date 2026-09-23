@@ -44,10 +44,8 @@ public struct Sync: Sendable {
         let profile = try await gmail.profile()
         let sendAs = try await gmail.sendAs()
         let primary = sendAs.first { $0.isPrimary == true } ?? sendAs.first { $0.sendAsEmail.lowercased() == profile.emailAddress.lowercased() }
-        let name = primary?.displayName.flatMap { $0.isEmpty ? nil : $0 } ?? profile.emailAddress
-        let account = Account(email: profile.emailAddress, name: name)
-        try store.save(account: account)
-        await onAccount(account)
+        let displayName = primary?.displayName.flatMap { $0.isEmpty ? nil : $0 }
+        try await publishAccount(email: profile.emailAddress, displayName: displayName)
         try store.save(sendAs: sendAs.map {
             SendAs(email: $0.sendAsEmail, displayName: $0.displayName ?? "", signature: $0.signature ?? "",
                    isDefault: $0.isDefault ?? false, isPrimary: $0.isPrimary ?? false, replyTo: $0.replyToAddress)
@@ -55,12 +53,42 @@ public struct Sync: Sendable {
         try syncLabels(try await gmail.labels())
 
         if let historyId = try store.get("historyId") {
-            do { try await applyHistory(since: historyId) }
+            do {
+                try await applyHistory(since: historyId)
+                if backfilledMonths < backfillMonths { try await backfill(historyId: profile.historyId) }
+            }
             catch let e as GmailError where e.status == 404 { try await backfill(historyId: profile.historyId) }
         } else {
             try await backfill(historyId: profile.historyId)
         }
         try await syncDrafts()
+        if displayName == nil { try await publishAccount(email: profile.emailAddress, displayName: nil) }
+    }
+
+    /// Months the last completed backfill covered; widening `backfillMonths` backfills the difference.
+    private var backfilledMonths: Int {
+        (try? store.get(Self.backfilledMonthsKey)).flatMap { $0.flatMap(Int.init) } ?? Self.legacyBackfillMonths
+    }
+    /// Installs that finished a backfill before this key existed used a 3-month window.
+    static let legacyBackfillMonths = 3
+    static let backfilledMonthsKey = "backfilledMonths"
+
+    /// Gmail's send-as display name is often empty; the name on mail the user sent is the next best source.
+    private func publishAccount(email: String, displayName: String?) async throws {
+        let sent = try await store.db.read { db in
+            try String.fetchAll(db, sql: "SELECT \"from\" FROM messages WHERE labelIds LIKE '%SENT%' ORDER BY internalDate DESC LIMIT 50")
+        }
+        let name = displayName ?? sent.lazy.compactMap(Self.displayName(from:)).first ?? email
+        let account = Account(email: email, name: name)
+        try store.save(account: account)
+        await onAccount(account)
+    }
+
+    /// `Tim Cvetko <tim@x.com>` or `"Tim Cvetko" <tim@x.com>` → `Tim Cvetko`; a bare address has no name.
+    static func displayName(from header: String) -> String? {
+        guard let bracket = header.firstIndex(of: "<") else { return nil }
+        let name = header[..<bracket].trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        return name.isEmpty || name.contains("@") ? nil : name
     }
 
     private func syncLabels(_ remote: [GmailLabel]) throws {
@@ -110,6 +138,7 @@ public struct Sync: Sendable {
             } while pageToken != nil
         }
         await progress(done.count, done.count)
+        try store.set(Self.backfilledMonthsKey, String(backfillMonths))
 
         let cutoff = Int64(since.timeIntervalSince1970 * 1000)
         try store.deleteMessages(ids: known.filter { $0.date >= cutoff && !listedInWindow.contains($0.id) }.map(\.id))
