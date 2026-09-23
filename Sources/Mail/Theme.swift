@@ -60,16 +60,19 @@ enum Theme {
         static let trafficLightCentresX: [CGFloat] = [21, 41, 61]
         static let trafficLightCentreY: CGFloat = 24
         static let sidebarItemHeight: CGFloat = 30
-        static let sidebarItemPitch: CGFloat = 32
+        static let sidebarItemPitch: CGFloat = 34
         static let sidebarItemInset: CGFloat = 8
         static let sidebarFooterHeight: CGFloat = 45
 
         static let paneHeaderHeight: CGFloat = 48
-        static let rowHeight: CGFloat = 38
+        static let rowHeight: CGFloat = 42
+        /// Gap between the pane header and the first row or group header.
+        static let listTopInset: CGFloat = 10
         static let rowInset: CGFloat = 14
         static let rowRadius: CGFloat = 8
-        static let groupHeaderHeight: CGFloat = 56
-        static let groupHairlineY: CGFloat = 48
+        static let groupHeaderHeight: CGFloat = 60
+        static let groupLabelY: CGFloat = 26
+        static let groupHairlineY: CGFloat = 52
         static let checkboxX: CGFloat = 24
         static let checkboxSize: CGFloat = 14
         static let unreadDotCenterX: CGFloat = 55
@@ -91,7 +94,15 @@ enum Theme {
         static let peekToolbarHeight: CGFloat = 44
         static let readerMaxWidth: CGFloat = 800
         static let readerPadding: CGFloat = 42
-        static let collapsedMessageHeight: CGFloat = 44
+        static let collapsedMessageHeight: CGFloat = 48
+        static let showMoreHeight: CGFloat = 40
+        static let subjectTop: CGFloat = 16
+        static let subjectBottom: CGFloat = 20
+        static let messageHeaderTop: CGFloat = 20
+        static let messageBodyInset: CGFloat = 28
+        static let replyBarTop: CGFloat = 32
+        static let replyBarSpacing: CGFloat = 10
+        static let readerBottom: CGFloat = 48
         static let selectedMessageBar: CGFloat = 4
 
         static let composerWidth: CGFloat = 600

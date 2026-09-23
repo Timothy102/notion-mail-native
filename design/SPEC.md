@@ -12,14 +12,14 @@ Units are points (1 pt = 2 px in the `-2x` captures). "Pane" means the list pane
 
 | Topic | tokens.md (bundle) | layout.md | Screenshot measurement (wins) |
 |---|---|---|---|
-| Thread row height | 40 | 38 | **38**: 76 px pitch in `hc-…-2x`, and 38 in `yt-mf`, `hcvid` and `yt-kw` |
+| Thread row height | 40 | 38 | **42** (Tim: "allow for more spacing"; references measure 38). The list starts 10 below the pane header (`listTopInset`). |
 | List row text | 14 (REGULAR) | 13 | **13** at the Default font size. The cap height is 18 px @2x, versus 19–20 px for the 14 pt sidebar and title. The "Large" setting (used in `yt-mf` and `yt-kw`) is 14 and is not built. |
 | Sidebar width | 240 | 219 | **240** default (`yt-mf`, 239); min 220 (`hc` at a 960 pt window), max 480 |
 | Sidebar item label | 14 medium, textSecondary | 14 regular, primary | **14 regular, textSecondary `#5F5E5B`**, textPrimary when selected (sampled) |
 | Read-row text | textPrimary @ 0.85 | primary | **Light: textPrimary at full opacity** (lossless `hc` and `zp` sample `#1D1B17`). **Dark: textPrimary @ 0.85** (`ant-*`: read ≈ `#B7B7B7`, unread clearly brighter). The difference is exposed as the `textRead` token. |
 | Unread dot | `#2383E2` | `#4281DB` | **`#2383E2`**: the layout value was a P3 artifact |
 | Row separators | transparent | 0.5 pt `#F1F0F0` | **1 px (0.5 pt) `borderDeemphasized`** from the sender's x to the date's trailing edge. There is none after the last row of a group. |
-| Date-group header | 80 (48 when first) | 38 + 20 | **56**: label centred 28 from the top, 1 px hairline 48 from the top (8 above the next row). A header that opens the list is 56 too. |
+| Date-group header | 80 (48 when first) | 38 + 20 | **60**: label top 26 from the top, 1 px hairline 52 from the top (8 above the next row). A header that opens the list is 60 too. |
 | Palette row radius | 4 | 6 | **6** |
 | Palette row label | medium | — | **regular** 14 |
 | Hover-action width | 21.5 per action | 24 pitch | **30 pitch**, pill 32 tall (`hcvid`: 54 px / 1.8; `yt-mf`: 46.5 px / 1.5625) |
@@ -127,7 +127,7 @@ SF Pro (system) everywhere, with antialiasing on. Avatar initials use SF Pro Rou
 | `paletteInput` | 18 / 24 | regular | textPrimary; placeholder textQuaternary | cmd-K input |
 | `body` | 14 / 20 | regular | textPrimary | sidebar items (textSecondary), buttons, menus, palette rows, composer fields, message header |
 | `bodyMedium` | 14 / 20 | medium | textPrimary | list-pane title, sender name in the message header, chips on the reader, toast |
-| `list` | 13 / 16 (row is 38) | regular | textRead | read sender and subject |
+| `list` | 13 / 16 (row is 42) | regular | textRead | read sender and subject |
 | `listUnread` | 13 / 16 | semibold | textPrimary | unread sender and subject |
 | `listSecondary` | 13 / 16 | regular | textTertiary | snippet, thread count "2", date (tabular numbers) |
 | `groupHeader` | 13 / 16 | medium | textPrimary | "Yesterday", "Last 7 days", "March" |
@@ -147,7 +147,7 @@ SF Pro (system) everywhere, with antialiasing on. Avatar initials use SF Pro Rou
 | Sidebar | 240 default, 220 min, 480 max; 1 pt `divider` on the trailing edge |
 | Traffic lights | inside the sidebar, centres at x 21 / 41 / 61, y 24; hidden titlebar, full-size content |
 | Pane toolbar height | 48, title centred at y 24 |
-| Row height | 38 |
+| Row height | 42 |
 | Row inset (row box to pane edge) | 14 each side, radius 8 |
 | Group header height | 56 (hairline at y 48) |
 | Sidebar item | 30 tall on a 32 pitch, inset 8, radius 6, icon slot 20, gap 8 |
@@ -197,7 +197,7 @@ From the top (y is window coordinates):
 - A group header (§5.3) is 56 tall.
 - Between two groups nothing else changes. The header height alone supplies the whitespace.
 
-**Rows:** see §5.2, 38 tall. The list scrolls under the header. The header has no background change and no divider while scrolling.
+**Rows:** see §5.2, 42 tall. The list scrolls under the header. The header has no background change and no divider while scrolling.
 
 **Column geometry**, in pane coordinates. W is the window width and P is the pane width:
 | Element | x |
@@ -326,7 +326,7 @@ Separators run from the sender's x to the date's right edge.
 - 4 below the title, the body "Rest easy, no mail carriers in sight." in `body` textSecondary, centred and wrapping at max 320.
 
 **Loading list** (`cache-inbox-preview`):
-- 8 skeleton rows at the 38 row pitch.
+- 8 skeleton rows at the 42 row pitch.
 - Each row has a pill bar (radius 7, 14 tall, `skeleton`) at the sender x, 90–130 wide, and a second bar at the subject x, 180–320 wide.
 - The widths come from a fixed pseudo-random sequence, so they never jump between frames.
 - Opacity pulses between .5 and 1 over 1.2 s ease-in-out.
@@ -374,7 +374,7 @@ Separators run from the sender's x to the date's right edge.
 | selected | `rowHover` (renders `#EAEAE8` light / `#2C2C2C` dark) |
 
 ### 5.2 Thread row
-- Height 38. The whole row is one hit target.
+- Height 42. The whole row is one hit target.
 - Radius 8, but a corner that touches an adjacent hovered or selected row is 0, so runs merge into one shape.
 
 **States.** Every state is an overlay, so nothing moves:
@@ -408,8 +408,8 @@ Separators run from the sender's x to the date's right edge.
 **Mark read on open:** the dot fades out over 150 ms and the weight changes on the same frame. This is optimistic.
 
 ### 5.3 Date-group header
-- 56 tall. Label `groupHeader` at x 71 (pane coordinates), centred 28 from the top.
-- 1 px `divider` from x 55 to P − 38 at y 48.
+- 60 tall. Label `groupHeader` at x 71 (pane coordinates), top at y 26.
+- 1 px `divider` from x 55 to P − 38 at y 52.
 - A hover shows "Collapse" in `groupHeader` textTertiary after the label, 6 after it. An empty group shows "(Empty)" in textTertiary.
 
 ### 5.4 Label chip
@@ -521,7 +521,7 @@ Graders compare the snapshot against the named reference at the same theme. Ever
 
 ### inbox (`hc-inbox-view-labels-light-2x`, `yt-mf-inbox-grouped-date-chips`, `ant-view-grouped-by-date-dark`)
 - [ ] Header is 48 tall, with the title 14 medium next to a 16 icon and three 16 icons at the right. There is no "Auto label".
-- [ ] Rows are exactly 38 apart. Sender and subject are 13 pt. Unread is semibold; read is regular.
+- [ ] Rows are exactly 42 apart. Sender and subject are 13 pt. Unread is semibold; read is regular.
 - [ ] The unread dot is 6 pt `#2383E2`, centred 55 from the pane edge, and read rows keep the gap.
 - [ ] Sender column ≈16% of the window width. Subjects in all rows start at the same x.
 - [ ] Dates are right-aligned on one edge, grey, and tabular ("11:32 PM", "Mar 6").
@@ -577,7 +577,7 @@ Graders compare the snapshot against the named reference at the same theme. Ever
 - [ ] The header remains in place.
 
 ### loading (`cache-inbox-preview`)
-- [ ] Rounded grey skeleton bars at the 38 row pitch, in the sender and subject columns. No spinner.
+- [ ] Rounded grey skeleton bars at the 42 row pitch, in the sender and subject columns. No spinner.
 
 ### settings (`yt-kw-settings-signature`, `ant-settings-thread-style-dark`)
 - [ ] Modal with a `wash` left nav at 250, and the title 17 semibold above a divider.
