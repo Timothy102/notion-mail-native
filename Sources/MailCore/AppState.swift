@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -37,6 +38,8 @@ public final class AppState {
     public var isDemo: Bool { gmail == nil }
 
     public var account: Account?
+    /// Google profile photo; nil shows the letter avatar.
+    public var avatarImage: NSImage?
     /// nil until the Keychain has been checked; demo mode is always signed in.
     public var isSignedIn: Bool?
     public var syncStatus: SyncStatus = .idle
@@ -78,6 +81,7 @@ public final class AppState {
         self.gmail = gmail
         actions = MailActions(store: store, gmail: gmail)
         account = try? store.db.read(Store.account)
+        if gmail != nil { avatarImage = NSImage(contentsOf: ProfilePhoto.url) }
         if gmail == nil { isSignedIn = true }
         else { theme = UserDefaults.standard.string(forKey: Self.themeKey).flatMap(ThemePreference.init(rawValue:)) ?? .system }
         actions.onToast = { [weak self] in self?.show($0) }

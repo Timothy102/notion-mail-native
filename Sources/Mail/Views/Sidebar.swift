@@ -55,7 +55,7 @@ struct Sidebar: View {
         HStack(spacing: 0) {
             Button { app.isAccountMenuOpen.toggle() } label: {
                 HStack(spacing: 0) {
-                    Avatar(name: app.account?.name ?? "?", size: 20, fill: Theme.accent)
+                    Avatar(name: app.account?.name ?? "?", size: 20, fill: Theme.accent, image: app.avatarImage)
                     Text(app.account?.name ?? app.account?.email ?? "")
                         .textStyle(.bodyMedium)
                         .lineLimit(1)

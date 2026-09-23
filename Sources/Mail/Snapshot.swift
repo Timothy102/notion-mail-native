@@ -94,6 +94,9 @@ enum Snapshot {
         case "settings-appearance": app.settings = .appearance
         case "settings-shortcuts": app.settings = .shortcuts
         case "account-menu": app.isAccountMenuOpen = true
+        case "account-menu-photo", "settings-account-photo":
+            app.avatarImage = Bundle.appResources.url(forResource: "avatar-placeholder", withExtension: "png", subdirectory: "Art").flatMap(NSImage.init(contentsOf:))
+            if screen == "account-menu-photo" { app.isAccountMenuOpen = true } else { app.settings = .account }
         case "syncing":
             try? app.store.deleteMessages(ids: (try? app.store.db.read { try Message.fetchAll($0).map(\.id) }) ?? [])
             for draft in (try? app.store.db.read(Store.drafts)) ?? [] { try? app.store.deleteDraft(id: draft.id) }

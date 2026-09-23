@@ -22,13 +22,17 @@ extension AppState {
         syncTick = nil
         // An in-flight sync must finish unwinding before the wipe, or it writes rows back afterwards.
         await loop?.value
-        if !isDemo { await Auth.shared.signOut() }
+        if !isDemo {
+            await Auth.shared.signOut()
+            try? FileManager.default.removeItem(at: ProfilePhoto.url)
+        }
         try? store.eraseAll()
         isAccountMenuOpen = false
         settings = nil
         compose = nil
         palette = nil
         account = nil
+        avatarImage = nil
         syncStatus = .idle
         go(to: .inbox)
         isSignedIn = false

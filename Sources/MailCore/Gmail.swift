@@ -133,6 +133,16 @@ public struct GmailClient: Sendable {
 
     public func profile() async throws -> GmailProfile { try await request("GET", "profile") }
 
+    /// The Google account's name and photo. Needs the userinfo.profile scope: older logins get a 401/403.
+    public func userinfo() async throws -> GoogleUserinfo {
+        var req = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v2/userinfo")!)
+        req.setValue("Bearer \(try await token(false))", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await session.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw GmailError.http(status: status, body: String(decoding: data, as: UTF8.self)) }
+        return try JSONDecoder().decode(GoogleUserinfo.self, from: data)
+    }
+
     // Messages
 
     public func listMessages(q: String? = nil, labelIds: [String] = [], pageToken: String? = nil, maxResults: Int = 100, includeSpamTrash: Bool = false) async throws -> GmailMessageList {
