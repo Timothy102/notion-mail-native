@@ -15,10 +15,13 @@ extension Store {
 extension AppState {
     /// Stops syncing, forgets the Google tokens, clears the local store and returns to sign-in.
     public func signOut() async {
-        syncLoop?.cancel()
+        let loop = syncLoop
+        loop?.cancel()
         syncTick?.finish()
         syncLoop = nil
         syncTick = nil
+        // An in-flight sync must finish unwinding before the wipe, or it writes rows back afterwards.
+        await loop?.value
         if !isDemo { await Auth.shared.signOut() }
         try? store.eraseAll()
         isAccountMenuOpen = false
