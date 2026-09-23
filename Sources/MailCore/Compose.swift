@@ -40,9 +40,9 @@ public struct ComposeDraft: Sendable, Hashable {
     public var cc: [EmailAddress] = []
     public var bcc: [EmailAddress] = []
     public var subject = ""
-    /// Plain text, including the signature block when one was inserted.
+    /// Plain text, including the signature block (as `signatureText`) when one was inserted.
     public var body = ""
-    /// The plain-text signature inserted at the end of `body`, "" when none.
+    /// The signature HTML whose text is inserted at the end of `body`, "" when none.
     public var signature = ""
     /// Quoted original for replies and forwards; sent below `body`.
     public var quoted: String?
@@ -55,6 +55,9 @@ public struct ComposeDraft: Sendable, Hashable {
     public var attachments: [ComposeAttachment] = []
     public var draftId: String?
     public var draftMessageId: String?
+    /// One per compose session, so a save that finishes after the composer moved on to another
+    /// request cannot hand that request its draft and thread ids.
+    public private(set) var sessionId = UUID()
 
     public init(mode: Mode, from: EmailAddress, to: [EmailAddress] = [], cc: [EmailAddress] = [], subject: String = "") {
         self.mode = mode
@@ -69,27 +72,42 @@ public struct ComposeDraft: Sendable, Hashable {
         text.isEmpty ? "" : "\n\n" + text
     }
 
-    /// `body` with the signature split off, when it is still there unchanged.
-    static func splitSignature(_ body: String, signature: String) -> (typed: String, signature: String) {
-        guard !signature.isEmpty, let range = body.range(of: signatureBlock(signature), options: .backwards) else { return (body, "") }
-        return (String(body[..<range.lowerBound]) + body[range.upperBound...], signature)
+    /// The signature as it reads in `body`.
+    public var signatureText: String { Signature.render(signature).text }
+
+    /// `body` around the signature block, nil when there is none or it was edited.
+    var signatureSplit: (before: String, after: String)? {
+        guard !signature.isEmpty, let range = body.range(of: Self.signatureBlock(signatureText), options: .backwards) else { return nil }
+        return (String(body[..<range.lowerBound]), String(body[range.upperBound...]))
     }
 
     /// Body with the signature block and surrounding whitespace removed: what the user typed.
     public var typedText: String {
-        Self.splitSignature(body, signature: signature).typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        (signatureSplit.map { $0.before + $0.after } ?? body).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Appends `text` as a new paragraph after what was typed, keeping the signature block below.
     public mutating func insert(_ text: String) {
-        let kept = Self.splitSignature(body, signature: signature).signature
+        let kept = signatureSplit == nil ? "" : signatureText
         let typed = typedText
         body = (typed.isEmpty ? text : typed + "\n\n" + text) + Self.signatureBlock(kept)
     }
 
-    mutating func sign(_ text: String) {
-        signature = text
-        body = Self.signatureBlock(text)
+    mutating func sign(_ html: String) {
+        signature = html
+        body = Self.signatureBlock(signatureText)
+    }
+
+    /// Takes the ids (and fetched attachment bytes) a save of this session assigned; saves of
+    /// another session are ignored.
+    public mutating func adopt(_ saved: ComposeDraft) {
+        guard saved.sessionId == sessionId else { return }
+        draftId = saved.draftId
+        draftMessageId = saved.draftMessageId
+        threadId = saved.threadId
+        for a in saved.attachments where a.data != nil {
+            if let i = attachments.firstIndex(where: { $0.id == a.id && $0.data == nil }) { attachments[i].data = a.data }
+        }
     }
 
     /// Nothing worth keeping as a draft.
@@ -101,18 +119,27 @@ public struct ComposeDraft: Sendable, Hashable {
     public var recipients: [EmailAddress] { to + cc + bcc }
 
     /// Swaps the signature block of `old` for that of `new` when the body still contains it.
-    /// `next` is the new identity's signature (`Signature.text`).
+    /// `next` is the new identity's signature HTML (`Signature.html`).
     public mutating func switchIdentity(to identity: SendAs, signature next: String) {
-        if !signature.isEmpty, let range = body.range(of: Self.signatureBlock(signature), options: .backwards) {
-            body.replaceSubrange(range, with: Self.signatureBlock(next))
+        if let split = signatureSplit {
+            body = split.before + Self.signatureBlock(Signature.render(next).text) + split.after
             signature = next
         }
         from = identity.address
     }
 
+    /// multipart/alternative: the text part spells out signature links as "LinkedIn (https://…)",
+    /// the HTML part carries the signature HTML itself. Quotes are appended by `MIME.build`.
     public func outgoing() -> OutgoingMessage {
+        func html(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : Quote.html(fromText: text) }
+        let split = signatureSplit
+        let text = split.map { $0.before + Self.signatureBlock(Signature.render(signature).textWithURLs) + $0.after } ?? body
+        let bodyHTML = split.map { s in
+            let typed = html(s.before)
+            return (typed.isEmpty ? "" : typed + "<br>") + signature + (html(s.after).isEmpty ? "" : "<br>" + html(s.after))
+        } ?? html(body)
         var out = OutgoingMessage(
-            from: from, to: to, cc: cc, bcc: bcc, subject: subject, text: body, quoted: quoted,
+            from: from, to: to, cc: cc, bcc: bcc, subject: subject, text: text, html: "<div dir=\"ltr\">" + bodyHTML + "</div>", quoted: quoted,
             inReplyTo: inReplyTo, references: references, threadId: threadId,
             attachments: attachments.compactMap { a in a.data.map { OutgoingAttachment(filename: a.filename, mimeType: a.mimeType, data: $0) } }
         )
@@ -130,7 +157,7 @@ public struct ComposeDraft: Sendable, Hashable {
         switch kind {
         case .new(let to):
             var d = ComposeDraft(mode: .new, from: defaultFrom, to: to)
-            d.sign(try Signature.text(for: defaultIdentity, db: db))
+            d.sign(try Signature.html(for: defaultIdentity, db: db))
             return d
         case .reply(let messageId, let all):
             guard let m = try Store.message(db, id: messageId) else { return ComposeDraft(mode: .new, from: defaultFrom) }
@@ -147,8 +174,9 @@ public struct ComposeDraft: Sendable, Hashable {
             d.cc = EmailAddress.parseList(m.cc)
             d.bcc = EmailAddress.parseList(m.bcc)
             d.subject = m.subject
-            d.body = m.bodyText
-            d.signature = try Signature.text(for: identities.first { $0.email.lowercased() == m.sender.email.lowercased() }, db: db)
+            d.signature = try Signature.html(for: identities.first { $0.email.lowercased() == m.sender.email.lowercased() }, db: db)
+            let rendered = Signature.render(d.signature)
+            d.body = m.bodyText.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: signatureBlock(rendered.textWithURLs), with: signatureBlock(rendered.text))
             d.inReplyTo = m.inReplyTo.isEmpty ? nil : m.inReplyTo
             d.references = m.references.split(whereSeparator: \.isWhitespace).map(String.init)
             d.threadId = draft.threadId
@@ -172,7 +200,7 @@ public struct ComposeDraft: Sendable, Hashable {
         d.references = mode == .forward ? [] : out.references
         d.threadId = mode == .forward ? nil : m.threadId
         d.sourceMessageId = m.id
-        if signOnReplies { d.sign(try Signature.text(for: identity, db: db)) }
+        if signOnReplies { d.sign(try Signature.html(for: identity, db: db)) }
         if mode == .forward {
             d.attachments = try Attachment.filter(Column("messageId") == m.id).fetchAll(db).filter { !$0.isInline }.map(ComposeAttachment.init)
         }
@@ -263,7 +291,7 @@ public final class Outbox {
     private static var attached: [ObjectIdentifier: Outbox] = [:]
 
     static func attached(to app: AppState) -> Outbox {
-        if let outbox = attached[ObjectIdentifier(app)] { return outbox }
+        if let outbox = attached[ObjectIdentifier(app)], outbox.app === app { return outbox }
         let outbox = Outbox(app: app)
         attached[ObjectIdentifier(app)] = outbox
         outbox.registerCommands()
@@ -412,21 +440,16 @@ public final class Outbox {
 
     // MARK: Signatures
 
-    /// Pushes the signature to Gmail (`sendAs.patch`) and keeps it as the local one too.
+    /// Pushes the signature HTML to Gmail (`sendAs.patch`) and keeps it as the local one too.
     /// Only the explicit "Save to Gmail" button calls this.
-    public func updateSignature(_ identity: SendAs, text: String) async throws {
+    public func updateSignature(_ identity: SendAs, html: String) async throws {
         guard let store else { return }
-        let html = Self.signatureHTML(fromText: text)
+        let html = html.trimmingCharacters(in: .whitespacesAndNewlines)
         var updated = identity
         updated.signature = html
         if let gmail { _ = try await gmail.updateSignature(sendAsEmail: identity.email, signature: html) }
         try store.save(sendAs: [updated])
-        try store.saveLocalSignature(text, for: identity)
-    }
-
-    /// Plain-text signature to the HTML Gmail stores.
-    nonisolated public static func signatureHTML(fromText text: String) -> String {
-        MIME.htmlEscape(text.trimmingCharacters(in: .whitespacesAndNewlines)).replacingOccurrences(of: "\n", with: "<br>")
+        try store.saveLocalSignature(html, for: identity)
     }
 
     // MARK: Helpers

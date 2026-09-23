@@ -13,7 +13,7 @@ public enum Fixtures {
         try store.save(labels: labels)
         try store.save(sendAs: [
             SendAs(email: me.email, displayName: "Tim Cvetko",
-                   signature: Outbox.signatureHTML(fromText: Signature.defaultText),
+                   signature: Signature.defaultHTML,
                    isDefault: true, isPrimary: true),
             SendAs(email: "tim@helio.dev", displayName: "Tim Cvetko (Helio)",
                    signature: "Tim Cvetko<br>Founder, Helio<br><a href=\"https://helio.dev\">helio.dev</a>",
