@@ -28,6 +28,26 @@ enum Snapshot {
         case "thread":
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
             if let thread = inbox.first(where: { $0.messageCount >= 5 }) ?? inbox.first { app.open(thread.id) }
+        case "rows":
+            let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
+            if inbox.count > 6 {
+                app.selectedThreadIds = [inbox[2].id, inbox[3].id]
+                ThreadRow.snapshotHoverId = inbox[5].id
+            }
+        case "toast":
+            let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
+            if inbox.count > 2 {
+                app.visibleThreadIds = inbox.map(\.id)
+                app.focusedThreadId = inbox[1].id
+                app.commands.run("thread.archive")
+            }
+        case "attachments":
+            let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
+            if let thread = inbox.first(where: { $0.subject.hasPrefix("Contract draft") }) { app.open(thread.id) }
+        case "html", "labels":
+            let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []
+            if let thread = inbox.first(where: { $0.subject.hasPrefix("The Sunday Stack") }) { app.open(thread.id) }
+            if screen == "labels" { app.isLabelPickerOpen = true }
         case "compose": app.compose = ComposeRequest(.new(to: []))
         case "palette": app.palette = .commands
         case "search": app.search("offsite")

@@ -14,21 +14,20 @@ struct Sidebar: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     SidebarItem(title: "Search", icon: { SlotIcon(systemName: "magnifyingglass") }) { app.palette = .search }
-                        .padding(.top, 4)
                     section("Views")
-                    mailbox(.inbox, icon: "tray.fill", tint: Theme.inboxRed)
-                    mailbox(.starred, icon: "star")
+                    mailbox(.inbox, tint: Theme.inboxRed)
+                    mailbox(.starred)
                     section("Mail")
-                    mailbox(.all, icon: "tray.2")
-                    mailbox(.sent, icon: "paperplane")
-                    mailbox(.drafts, icon: "pencil.circle")
-                    mailbox(.spam, icon: "exclamationmark.octagon")
-                    mailbox(.trash, icon: "trash")
+                    mailbox(.all)
+                    mailbox(.sent)
+                    mailbox(.drafts)
+                    mailbox(.spam)
+                    mailbox(.trash)
                     if !labels.value.isEmpty {
                         section("Labels")
                         ForEach(labels.value) { label in
                             SidebarItem(title: label.name, count: counts.value[label.id] ?? 0, isSelected: isCurrent(.label(label.id)),
-                                        icon: { Circle().fill(LabelColor(named: label.color).text.opacity(0.55)).frame(width: 10, height: 10) }) {
+                                        icon: { Circle().fill(LabelColor(named: label.color).dot).frame(width: 10, height: 10) }) {
                                 app.go(to: .label(label.id))
                             }
                         }
@@ -72,14 +71,13 @@ struct Sidebar: View {
             .textStyle(.smallMedium)
             .foregroundStyle(Theme.textTertiary)
             .padding(.leading, 18)
-            .frame(height: 30, alignment: .bottom)
+            .frame(height: 30)
             .padding(.top, 14)
-            .padding(.bottom, 2)
     }
 
-    private func mailbox(_ box: Mailbox, icon: String, tint: Color = Theme.iconSecondary) -> some View {
+    private func mailbox(_ box: Mailbox, tint: Color = Theme.iconSecondary) -> some View {
         SidebarItem(title: box.title, count: box.labelId.flatMap { box == .sent ? nil : counts.value[$0] } ?? 0,
-                    isSelected: isCurrent(box), icon: { SlotIcon(systemName: icon, tint: tint) }) {
+                    isSelected: isCurrent(box), icon: { SlotIcon(systemName: box.symbol, tint: tint) }) {
             app.go(to: box)
         }
     }
