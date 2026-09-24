@@ -20,12 +20,6 @@ struct InboxList: View {
             let listHeight = geo.size.height - Theme.Metrics.paneHeaderHeight
             VStack(spacing: 0) {
                 header
-                    .overlay(alignment: .bottom) {
-                        if isLoading {
-                            LinearProgressBar(fraction: app.syncStatus.backfillFraction).transition(.opacity)
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.5), value: isLoading)
                     .zIndex(1)
                 content(layout, height: listHeight)
             }

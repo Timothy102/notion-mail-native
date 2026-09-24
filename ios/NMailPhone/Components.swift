@@ -72,7 +72,7 @@ struct SenderAvatar: View {
                 if fullBleed {
                     picture.scaledToFill()
                 } else {
-                    picture.scaledToFit().padding(size * 0.18).background(.white)
+                    picture.scaledToFit().padding(size * 0.22).background(.white)
                 }
             } else {
                 Self.palette[SenderAvatars.colorIndex(address.email, count: Self.palette.count)].dot

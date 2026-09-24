@@ -30,7 +30,6 @@ struct InboxView: View {
                 ToolbarItem(placement: .topBarTrailing) { accountButton }
             }
             .toolbarBackground(Theme.page, for: .navigationBar)
-            .overlay(alignment: .top) { syncProgress }
             .overlay(alignment: .bottomTrailing) {
                 if !isSearching { ComposeButton { app.compose = ComposeRequest(.new(to: [])) } }
             }
@@ -105,17 +104,6 @@ struct InboxView: View {
                 .lineLimit(3)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Theme.page)
-        }
-    }
-
-    @ViewBuilder
-    private var syncProgress: some View {
-        if isLoading {
-            if case .backfilling(let fetched, let total) = app.syncStatus, total > 0 {
-                ProgressView(value: Double(fetched), total: Double(total)).progressViewStyle(.linear).tint(Theme.accent)
-            } else {
-                ProgressView(value: 0.3).progressViewStyle(.linear).tint(Theme.accent).opacity(0.5)
-            }
         }
     }
 

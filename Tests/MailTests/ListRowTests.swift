@@ -101,3 +101,18 @@ final class ListRowTests: XCTestCase {
         XCTAssertNotNil(avatars.cached("ANA.kovac@gmail.com"))
     }
 }
+
+final class AvatarTrimTests: XCTestCase {
+    func testTransparentMarginsAreTrimmedToTheMark() throws {
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: 128, height: 128, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 44, y: 50, width: 40, height: 30))
+        let trimmed = SenderAvatars.trimmed(try XCTUnwrap(ctx.makeImage()))
+        XCTAssertEqual(trimmed.width, 40)
+        XCTAssertEqual(trimmed.height, 40, "square around the 40×30 mark")
+        guard case .image(let img, let full) = SenderAvatars.entry(try XCTUnwrap(ctx.makeImage())) else { return XCTFail() }
+        XCTAssertFalse(full)
+        XCTAssertEqual(img.width, 40)
+    }
+}

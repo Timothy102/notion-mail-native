@@ -164,7 +164,7 @@ struct SenderAvatar: View {
                 if fullBleed {
                     picture.scaledToFill()
                 } else {
-                    picture.scaledToFit().padding(size * 0.18).background(.white)
+                    picture.scaledToFit().padding(size * 0.22).background(.white)
                 }
             } else {
                 Self.palette[SenderAvatars.colorIndex(address.email, count: Self.palette.count)].dot
@@ -419,41 +419,6 @@ struct SkeletonRows: View {
                 .frame(width: band)
                 .offset(x: -band + (geo.size.width + band) * t)
         }
-    }
-}
-
-/// Thin accent bar: determinate when `fraction` is known, a gliding segment otherwise.
-struct LinearProgressBar: View {
-    var fraction: Double?
-    var height: CGFloat = 2
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Theme.progressTrack
-                if let fraction {
-                    Theme.accent
-                        .frame(width: geo.size.width * max(0.02, min(1, fraction)))
-                        .animation(.easeOut(duration: 0.6), value: fraction)
-                } else if reduceMotion {
-                    Theme.accent.opacity(0.4)
-                } else {
-                    TimelineView(.animation) { context in
-                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
-                        let segment = geo.size.width * 0.3
-                        Theme.accent
-                            .frame(width: segment)
-                            .offset(x: -segment + (geo.size.width + segment) * (1 - pow(1 - phase, 2)))
-                    }
-                }
-            }
-            .clipped()
-        }
-        .frame(height: height)
-        .accessibilityElement()
-        .accessibilityLabel("Syncing mail")
-        .accessibilityValue(fraction.map { "\(Int($0 * 100)) percent" } ?? "")
     }
 }
 

@@ -167,7 +167,33 @@ public final class SenderAvatars: Sendable {
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: size, height: size))
             return true
         } && pixels[3] > 200 && pixels[(size * size - 1) * 4 + 3] > 200
-        return .image(image, fullBleed: opaque)
+        return .image(opaque ? image : trimmed(image), fullBleed: opaque)
+    }
+
+    /// Crops a transparent mark to its visible pixels, so favicons that ship with wide empty margins (Apple's)
+    /// fill the avatar like everyone else's instead of shrinking to a dot.
+    static func trimmed(_ image: CGImage) -> CGImage {
+        let w = image.width, h = image.height
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let ctx = CGContext(data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { return image }
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            for x in 0..<w where pixels[(y * w + x) * 4 + 3] > 24 {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return image }
+        // Square crop around the mark so the logo keeps its proportions inside the circle.
+        let side = max(maxX - minX, maxY - minY) + 1
+        let cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+        let rect = CGRect(x: cx - side / 2, y: cy - side / 2, width: side, height: side).intersection(CGRect(x: 0, y: 0, width: w, height: h))
+        return image.cropping(to: rect) ?? image
     }
 
     /// "mail.notion.so" → "notion.so", "news.bbc.co.uk" → "bbc.co.uk": favicons live on the registrable domain.
