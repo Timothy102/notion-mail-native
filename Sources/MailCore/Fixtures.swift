@@ -116,6 +116,8 @@ public enum Fixtures {
     private static let swiftIsland = a("Swift Island", "tickets@swiftisland.nl")
     private static let podcast = a("Rachel Kim", "rachel@shipitpod.fm")
     private static let accountant = a("Petra Novak", "petra@novak-racunovodstvo.si")
+    private static let stripeVerify = a("Stripe", "verify@stripe.com")
+    private static let triglav = a("Zavarovalnica Triglav", "e-dokumenti@triglav.si")
 
     // MARK: - Threads
 
@@ -147,8 +149,13 @@ public enum Fixtures {
             let start = cal.startOfDay(for: cal.date(byAdding: .day, value: -daysAgo, to: now)!)
             return cal.date(byAdding: .minute, value: h * 60 + m, to: start)!
         }
-        /// Today, but never in the future: clamps to a few minutes ago.
-        func today(_ h: Int, _ m: Int = 0) -> Date { min(day(0, h, m), minutesAgo(3 + h)) }
+        /// Today, but never in the future: times after "3 minutes ago" squeeze into the last 3 minutes, in order,
+        /// so a thread reads the same whatever time the demo (or a test) runs.
+        func today(_ h: Int, _ m: Int = 0) -> Date {
+            let date = day(0, h, m), cutoff = minutesAgo(3)
+            guard date > cutoff else { return date }
+            return cutoff.addingTimeInterval(Double(h * 60 + m) / 1440 * 170)
+        }
         func nextWeekday(_ weekday: Int, _ h: Int) -> Date {
             let next = cal.nextDate(after: now, matching: DateComponents(hour: h, weekday: weekday), matchingPolicy: .nextTime)!
             return next
@@ -166,6 +173,15 @@ public enum Fixtures {
                   html: Self.airlineHTML(),
                   attachments: [OutgoingAttachment(filename: "boarding-qr.png", mimeType: "image/png",
                                                    data: gradientPNG(hue: 0.58, width: 180, height: 180), contentId: "qr-7HKQ2P@dalmatia-air")]),
+            ]),
+            T(subject: "Your Stripe verification code", labels: ["INBOX"], unread: true, messages: [
+                M(from: stripeVerify, to: [me], date: d.now.addingTimeInterval(-5),
+                  text: "Your verification code is 143819. It expires in 10 minutes. If you didn't try to sign in to Stripe, you can ignore this email."),
+            ]),
+            T(subject: "Your travel insurance ID card", labels: ["INBOX", "Label_3"], messages: [
+                M(from: triglav, to: [me], date: d.today(8, 5),
+                  text: "Dear Tim Cvetko, your travel insurance ID card is attached. Keep it on your phone: it's all you need at a doctor abroad.",
+                  attachments: [OutgoingAttachment(filename: "IDCard_359W2K.pdf", mimeType: "application/pdf", data: idCardPDF())]),
             ]),
             T(subject: "Q4 roadmap: decisions needed before Friday", labels: ["INBOX", "Label_1"], unread: true, unreadCount: 2, messages: [
                 M(from: priya, to: [me, marco, zoe], date: d.today(8, 12), text: """
@@ -604,11 +620,39 @@ public enum Fixtures {
             (a("Google Workspace", "workspace-noreply@google.com"), "Your storage is almost full", "You've used 28.4 GB of 30 GB. Free up space or upgrade to keep receiving email.", 330, 10, ["INBOX"], false),
         ]
         return one.map { from, subject, text, days, hour, labels, unread in
-            T(subject: subject, labels: labels, unread: unread, messages: [M(from: from, to: [me], date: d.day(days, hour, 17), text: text)])
+            T(subject: subject, labels: labels, unread: unread, messages: [M(from: from, to: [me], date: days == 0 ? d.today(hour, 17) : d.day(days, hour, 17), text: text)])
         }
     }
 
     // MARK: - Attachments
+
+    /// A one-page PDF shaped like an insurance card, so Quick Look has something real to show.
+    static func idCardPDF() -> Data {
+        let out = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 324, height: 204)
+        guard let consumer = CGDataConsumer(data: out as CFMutableData),
+              let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return Data() }
+        ctx.beginPDFPage(nil)
+        ctx.setFillColor(red: 0.07, green: 0.3, blue: 0.55, alpha: 1)
+        ctx.fill(box)
+        ctx.setFillColor(red: 1, green: 1, blue: 1, alpha: 0.9)
+        ctx.fill(CGRect(x: 20, y: 150, width: 120, height: 16))
+        for (i, width) in [180, 140, 160].enumerated() {
+            ctx.fill(CGRect(x: 20, y: 90 - i * 22, width: width, height: 9))
+        }
+        ctx.endPDFPage()
+        ctx.closePDF()
+        return out as Data
+    }
+
+    /// Favicons for a few fixture brands, so demo rows show real-looking avatars without the network.
+    public static let brandLogos: [String: String] = [
+        "figma.com": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAA2FBMVEUAAAD/Nzf/cjeHT/8ky3EAtv8ivmoAq+8Uc0AACxAAn9/vMzN/Su8AiL8ALkACDQcAW39MLZDvazPfZDDfMDCQHx+QQR8IBRAAk892Rd8AFyAAUHAgsWMARWAAcp8dpVwXf0cbmFUSZjgQBARADg7PLS2/VilgKxVgFRVwMhggBweAORtQERFAHQ6/KiqAHBwiFEAAfq8zHmARCiAqGVBEKIAFGQ4JMxwLQCMQWTEOTCpQJBIgDwdvGBifIiKfSCLPXSxtQM8AZo87I28AOVBUMZ9lPL8AIzB2djcmAAACzUlEQVR4nO2XW3vSQBRFYzBAUORSoci1QFu1tKW1pVy02lqt//8fGQpVvjBn44c7Z7zMfs3DWjOZk9nxPBcXFxcXFxcXl78o/f3KwbMnsfixlA+r7xPCD9fgJoF5dgYf+PxrI94sECm8ZvMrZrwk4PtVLv+jxBcF/E9Mvrh+IMDcgzcyHwj4b1n8o5fbCZT7JIEh4CMBf0ASQBsABUhbcIz4UMA/oQiAEdgkwBmE0+0FbigCwjf4VwTKFAHIxwL+vyFg/RUcbC9wSBGwPob72wtwylkfHgLE36Hw/4DLCG4B2gBaNb3eToBYTG1XMvul1H4tj4qp0IvM+DKtkP7M0dCoYMQPWHU0luPK6eaf05vqSUJ4b/esdPs8FcuPp2GrXcsEQSb/+UVC+NEafEUgLEbwx+RaCfDvjPhHgcYK/kHhC5tfMuMXAuF5sJYil/9V4s8Fwto6n2wgrv9BwLB+ssE7mR8JFM38IKBNw8UrJFCX+EGOJTAC/JTXFgUC1jSiDUjJGxAEeQ7/EvFTLSBAOgVgBKLkkUCDInAPBTJIoE0REL7ByyB+UKMIQD4W4AyidYHfeAWcObyFAvAQnlME8BgKN9EinDE8gwINJPCNIrALD0EI+KzbyPplBLfAq4vHkHYde3dIwBNPAbGe40om3EfUUmi7lNqv5VExFXrR4mkx/mOSwO/ZxciosHxab68oZIohnz/PZel+489pLrGfU88rjLOd9NNYkoIZ8L01uKrA1IjXE8ia8WoCexJfSUBcv5LATOarCFw1LQv0AF9FAG2AhsAE8TUEwAjoCHRtCwjfYD0ByP8vBOArSCsIdJBAV0EAjmFWQWCMBCYKAgVwCJoKfHgZ9VQE5C1oXqkIeFNJYKbDFwdBYwSWMZbSPT2+cQ8U1z/PLNaL0lNdflRNeysK6V5Bmz/PJNuNJjLdyY6t4F1cXFxcXFxcXJLJd700Sc+3yH7uAAAAAElFTkSuQmCC",
+        "notion.so": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAZlBMVEX///8AAADS0tJQUFCampo/Pz9kZGSsrKyoqKj19fXd3d3x8fHZ2dnr6+ulpaXPz8+ysrIxMTHk5OS/v79paWlYWFi5ubl0dHQiIiKMjIyGhobIyMh8fHxGRkYWFhYsLCwODg44ODi+YdwDAAAD/0lEQVR4nO2abcOqIAyGM03T1HzNTLP6/3/y2FOaDEyGuD4c748J7AJsG7jNZtWqVatWrdKnQ+JX0T4M92lAZjPwticnvBT2tTGGOkeLmXxN06qz/GZ8U7PVZtJNvONrmrv7V5tAl3nTTKOwnJzmd50TNevOboZRVqGCefesOF3TLsrQSbfta1n2b+TVRQPE0ibvOzu7WM6p8hLOTNVPI0XaP321GedZbe2jyk8OUwOVXZ8MB2ALVzZqVxbrXI79GD6mW9/rIlpZnMxurFIB4DrP9kthv3WTO8YBGI4OgqRBD/fZfeTLM6KiGy5HAxjxzFfgpbQfr8ICGIaWeHLoHWuNBlBypV/GbCSCA3ADai9C0MbPtI3ZbQA12Wi2xwIYN4k/0CHxtq29sCyyfNfAEVgVWADD4HIbN/D8qk0Q2mhtX9Ghy0IDGOcySt8LmsuHqjHd8QCa9Z8CxH1gogGIc7u4WHsnbUNq8Hao2XIA98fLXpQeW3tTQ88HaB55JmGP020GQP5nb+tNZ2JfZKoDKOb32gAwGdUiAHKBfEEATcfMFeAXAG2m8EksqQASNlP45OPaAdrEZJs6Hvi1Bp0/+YwmAL/NTDJ7kHmx/VPYWfcWwMMrdFMF88y2Bk5UC8Be8JjZhFOR94sD0j8tAFfB4zM3SLgcgOgxn+g6ywEcvO0p4m7OYLRcEOBP3C3a7dcA0BQ9gMFmZj8AePwagD32/gLAGKarPwEYXqsRAYCT8uAYTwRQlGyzT9wjArBB489FHBlAxbY7kQPA7IAewGUb2uQAnalOKTkA9An0AAHbtCAH2Fhs2yM5wAZcVdID+GzjmhwAnoV8cgDQp6EHAMexkhxgk7Ptk4gaAHjkBzkA9Mg3cgBxlkYJEIj6UQJAj0wPAD0yPYDP96MF4G6nyAH4rkoAokohSQDugkwJIIOjyANAj6wGICpikQUAHlkNQPQSyAJAj6wGILgJHAEQfFlnPbIawIavHhs7nufWETxhPbIiQDIF4A4RY7Zmjlk/RQC4kyzAsQQ+F2zE8K5YFYC7kB4AcHAG/JLY/xfPsIpMHgAGlgEA9FM1X2nj3P52hv/IgAAIRgFi0y5qK3ROle8Fo2U+4gcIAOBVST9avVUvAHDFAGwe+gEMFICrHcDHAQzqETVVdDVIgEGaCR2uvNy+puoTquV793Un0hVl7xKnvVUXtjlWcoTg77rwX6VeOiSen0bIkqoYAeB1nR7Ht71nyZj1tLdTrD5GFnzznn++4Kfe7xJliPOErXhXXukRTdcTAgkPnUo6X+0SW+b9FJfsyyruqqtmVh8Jj73iCWZ1ORWnlRQJDT50TVAKochNs53gKxFJNE9w1apVq1at+rX+AZWnOuBOYxBWAAAAAElFTkSuQmCC",
+        "stripe.com": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAJ1BMVEVHcExONu5UOv5TOftTOv7///9MLv34+P9fSf49Ev7W0/+tpf+Fd/5IiRS5AAAABHRSTlMAOdeWTzzdLAAAAchJREFUeJzt21GagyAMBGCpGFF7//Mugeq23a61Epg+TC4wfyD0oX7puq2c6y++QV1657q/1Sh9Mzzn9+3Sc/WP7Tfsfq2Lw+bfCzD5dwJQfhSA5u+30iQ6XL73DnsA6QhQE5grziH0BvQOoDegdwC9AX2J2HzvCSCAAAIIIICAqgCJNaEAMk3iw3WZxyDNATF8kpg9j8MwtAVIalyzY7LGtwSk8LA2vlUTgA7bi+w2gFvfy4vs6gA99ClN+j/hFQF65vmVDdu4NQNo3z4sqfG96AoASbU2fqzMAE+v7LDABLCF7952HcDDtJ2pIoDkV3Y6vPwEtPETx24FkFAUbQEoa54AAggggAACCCCAAAIIIIAAAggggAACcoEB4wwDjOO8XK/6RysAkMKDj+n78TUAKdvrhzvx79KtAfnQ8zfLo2UGGGdtPH3QOBxuBUjZ4fCh2wLWYfvg0K0AedBlej/oFQD50OXcoRcC1sY/HTYLwPrTdv7CSwD50A/8tNkCtgu//bTZ1/5Hq1D8ygoB4s2G7RygQRFAAAEEEEAAAfglF/iaD3zRCb7qBV92w6/7wRce8Suf+KVX+NovfvEZv/r9BcvvHWr9/we+9RME8MgsBQAAAABJRU5ErkJggg==",
+        "google.com": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAt1BMVEVHcEz9/v7w8PHz8/T29/f29vf19fb8+/vr7O38/f329/f19fX29vf6+vr+/v755uX////x8vI5iBT///85qldGiPX7wBQ8rFpJivTrUELrTUDsUUTrSz7rT0I+hPTu8vIvqFBMjPWUtvj8vgbN3fz5y8fuZFXT69lVtGrrQzTzmpG84MVzwYaUzqPxfXD2rqn83IN+qff+7L38zkZpnfb2nCY9npTMuyqWtD4zgPRCkc5/tdRHcEwgFdBcAAAAPXRSTlMA8C0eiU6g/g3jdcBiO9H9qdH///////////////////////////////////////////////////////8AWkw1vQAAB9FJREFUeJztW+l2okgYHVkscOeoEAWExKiIolk6nXTP+7/XVAFGKL5aQJIfc3LTSTrniPf67VUU//zzg2YwVGU4HOop8H8U1fhG7qE+6HX7I7PTQVMM1OmYo363N9CH36BCGWiTUWcKojOaaAPlK9nVHpO8IKKnfhG9PjEF7LkGc6J/Ab1mIhn2DMjstctu9Gqw5xp67UWk0pMyPY1OS8GgDkZN6AlGgxYk6JOm9AQ3h6OqmbfwT6emdpMRhv3b6An6w+b8gxs/fgZz0JDe6NbOPQa0RhmptmD+C/oNAkFpnHwQRrV71LAV919h1lSgt8yPFdSqCO3zYy/UUDCU8H+w2ZzPcYrzebMJJBRIFwRh/KFNfNput+7C87y95/ku/uN03oiyti8ZB6L828SEekng+376Gwvxlu423vCvnEhlo8HtPkHs7j1MvCDwLwJyEfu9e+aaoStTkXrs69E49vYZ94X/KiDX4J/HHA0Sg9KQffn4vPUW7oItIJOwPY+Zb9ERBqLBTEB0PmE/u0IBGCd2PJoiJzADYBy7hL7Azxawd2OmEbp8/gFL+uaErQ8IWEIClt7+xEwIbj0yWBUAe991KQGAAXIBaSSwFIx4TtAYF8WuX+HnC8AKGF5AGpuf0QJQnJtf0gNZGDB9YDIzgVGCgvhifnkDcPg55Qg2ACrwywpgR0BqAkYcGl3w5eelNP9Sip9pAngI2rgLiJ8ISPn2ad7V4mdEgQGmwHjLMADOdW97OuFx4LTFXcgrlCERP2NMVqEVKDrBAYBZ4s14HKQYjzcn0iOXsvzTDtSXB9Arzy7A7xMSVKyZCM8o231mAF78fwJYq4BFcLz1K/z+cnECawyu1rL8UDlUgJeheAnwM8s8Om+5+V9EdTqDcnDzGYGf5l/67EZHjCDJDzRFIASvJejK7/FnLunVZEfGAy/2iTShYvJ5Z1kGEWgfQJPg03r95vpF/n1r/JXpEBjFg1fbtt9c7ypgH7e1YMeLBGEIoJc1FmCvt97FCB6cfs1ABYFe/WjoNRVAjJApWEqUOHmgcksE+kBgX/C2JQsR3+cnQF2UByNgFHlZFxQs/HYdgDEpCajWYfR0FWDjbFgu4lb5p6MivwqMAnYRWEGrETCllijALILWJQX2G8MAzw9iPEO7B6WpZFDNwhdKgP0EC/gzn6+yLxh/yPcjcGGn2JKB3fgnWsALLGB1n+OugPndPEP2GxZQrIWaWMArzP8p4O6urCD/kQpYPQAJXFqgAGXgtZ4Amn6ea8gEgEFQFAAMA5SANSMEcgF3FQOkCuY8AV2+ACoCagmYfzohF/BLJAAohLUE3FUsUDTAfA4KmPAFUCGwZiRBKqDKXzIAwwICATUsQPNTISgjAApCaQFV/osMvgsEQSidBRL84jQEChEt4JUh4E9TAUggoFKKGdMIU8C8IACshMVSXL01iirNiJEGLAFzkYBSM9Jv6IZQC5yXBcDNqDgUKsJ5YP1xhH3wCOF5XsIKElC6iQMsjVEpCtcfTnSATQAgeF6VBNxDAsoLZKv6gmsUru115DhhIi3g8b5sAbAMWEV+qBAUguDdmTlODRM8lA0AxiC1PgaWhsjOVka2/eGkmB0lbgwR0B4AYxCVF4cKsDLKffD+MXNySJrgofz54RBA1PIYmMtTH6zfo09+J9rJ8Ae/KA/AQ3GZHwqC4DU1/5XfcWScgKgIwCEAvYzeIoH2yJ7W7x9OCSGjGBT5yymAx/VfkAcqtw0M4J1f3iOHwkyogE5B7AHoElTZJoN26ZIZLQDHAd8Lj1QA4ioEesCi+UEf7I6QAl4u0P4n0xBos+pOpQFtkx2q/LPZLNnBfkC7f2l6lgE6wGYxtFEYQCZwwugASAh2iRP+Lo0B+B/DANC9M2CXZjoFTECMEEZJWUOwOyRRiK3z+2/ZAGAVpPdnMqhAQ8JxGEISnFnoHJPkcNhhHA6H5BiFhL6oYJWlAPSmUwu8iw3fMzzCCogZZk6UYXZhzyRc3bC6B3MGwQd7FNAEQQSFQaaBRGQalmUQBausCIEOmFqMgwTwmb1dCCuo8Bbw91KEwXdErHvosAlwIAIKePSZghWLn2kAlgmmh4oXBPQ4PogbwC7IMQD78AalQEifKvjL4OceqwLG84oCGXosIEwY/B3u7XP43iXpCiEU7w34BQcIgAVChiAJxbRX/tmB1bZNwUka5gkG3JikJYQRo10xa5CEE0hnCqUkcMwvPMFBABeDFLujMAxC3CQ4o2t1DqmCe5DvcMSFn0cf8eglD/UBG8dFCcnRgV1BPnzCHdw7cqdLDcFB6iDrvkUV5K/omBz482Ige9rbADZMSkBk/jgeIydlxmPiEZPvRGsGJH+2VZU5TxsEu08EgfgCJHWS7WID6RO18vex+vXO9rZ4pjcTSt+oFKK1U80Zv0QBoqE1eqgARsA5PcVGr7WjtU0f+NCtVtyArMYPGShtBALq3vDokdGT3BZi00uXP5YR+jdJCGTPEnOMMOCdkhV8/PGgjWd9DE2i0EL0QbMHGwAo3TqPWeX05i3BV5WgjVANDQiNtBuebQEx1PqyZkBmv3V6AlXXLHE0oMDS9K964M9QdK3P6f0oCPqarnzpc5eGquhda1xRgbkDq6t/07OnhqHqvW7fstITjWPL6nd7ump843OvP/jBD/5P+A/yWoK0uPJ8MwAAAABJRU5ErkJggg==",
+    ]
+
 
     private static func file(_ name: String, _ type: String, kb: Int) -> OutgoingAttachment {
         var data = Data("%PDF-1.4\n% demo fixture\n".utf8)

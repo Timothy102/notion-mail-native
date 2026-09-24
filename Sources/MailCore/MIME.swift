@@ -536,11 +536,11 @@ public enum MIME {
         }
     }
 
-    /// First ~200 characters of the new text, quoted lines skipped.
+    /// First ~200 characters of the new text, quoted lines and `(https://…)` link expansions skipped.
     public static func snippet(_ text: String) -> String {
         let lines = Quote.split(text: text).new.split(separator: "\n").filter { !$0.hasPrefix(">") }
         let flat = lines.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        return String(flat.prefix(200))
+        return String(flat.listPreview.prefix(200))
     }
 
     public static func htmlEscape(_ s: String) -> String {

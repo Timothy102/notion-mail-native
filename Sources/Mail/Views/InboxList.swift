@@ -6,6 +6,7 @@ import SwiftUI
 struct InboxList: View {
     @Environment(AppState.self) private var app
     @State private var threads = Live<[MailThread]>([])
+    @State private var extras = Live<[String: ThreadRowExtras]>([:])
     @State private var labels = Live<[MailLabel]>([])
     @State private var collapsedGroups: Set<String> = []
     @State private var unreadOnly = false
@@ -38,6 +39,7 @@ struct InboxList: View {
             let box = app.mailbox
             collapsedGroups = []
             threads.observe(app.store) { try Store.threads($0, in: box) }
+            extras.observe(app.store) { try Store.rowExtras($0, threadIds: Store.threads($0, in: box).map(\.id)) }
         }
         .onAppear { labels.observe(app.store) { try Store.labels($0) } }
         .onChange(of: visibleIds, initial: true) { app.visibleThreadIds = visibleIds }
@@ -119,7 +121,7 @@ struct InboxList: View {
                             let ids = group.threads.map(\.id)
                             ForEach(Array(group.threads.enumerated()), id: \.element.id) { i, thread in
                                 let filled = isFilled(thread.id)
-                                ThreadRow(thread: thread, labels: byId, layout: layout,
+                                ThreadRow(thread: thread, extras: extras.value[thread.id], labels: byId, layout: layout,
                                           isLast: i == ids.count - 1,
                                           mergeTop: filled && i > 0 && isFilled(ids[i - 1]),
                                           mergeBottom: filled && i < ids.count - 1 && isFilled(ids[i + 1]),
@@ -421,6 +423,7 @@ struct GroupHeader: View {
 /// runs merge into one shape and separators hide next to fills.
 struct ThreadRow: View {
     let thread: MailThread
+    var extras: ThreadRowExtras?
     let labels: [String: MailLabel]
     let layout: RowLayout
     var isLast = false
@@ -437,6 +440,41 @@ struct ThreadRow: View {
         let selected = app.selectedThreadIds.contains(thread.id)
         let filled = selected || app.focusedThreadId == thread.id || app.openThreadId == thread.id
             || (isHovering && app.focusedThreadId == nil)
+        VStack(alignment: .leading, spacing: 0) {
+            mainLine(selected: selected)
+            if extras?.code != nil || !(extras?.files.isEmpty ?? true) {
+                HStack(spacing: 6) {
+                    if let code = extras?.code { CodeChip(code: code) }
+                    if let files = extras?.files, !files.isEmpty { AttachmentChips(files: files) }
+                }
+                .padding(.leading, layout.subjectX - Theme.Metrics.rowInset)
+                .padding(.top, -3)
+                .padding(.bottom, 10)
+            }
+        }
+        .background(fill(selected: selected, filled: filled), in: shape)
+        .overlay(alignment: .bottom) {
+            if !isLast && !filled && !nextFilled {
+                Hairline()
+                    .padding(.leading, Theme.Metrics.senderX - Theme.Metrics.rowInset)
+                    .padding(.trailing, Theme.Metrics.dateTrailing - Theme.Metrics.rowInset)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if isHovering {
+                HoverActions(thread: thread).padding(.trailing, 17 - Theme.Metrics.rowInset).frame(height: Theme.Metrics.rowHeight)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { tap() }
+        .padding(.horizontal, Theme.Metrics.rowInset)
+        .onLiveHover { h in
+            withAnimation(h ? Theme.Motion.hover : nil) { hovering = h }
+            onHover?(h)
+        }
+    }
+
+    private func mainLine(selected: Bool) -> some View {
         HStack(spacing: 0) {
             Button { app.toggleSelection(thread.id) } label: {
                 Checkbox(isOn: selected)
@@ -460,7 +498,7 @@ struct ThreadRow: View {
                     .foregroundStyle(thread.isUnread ? Theme.textPrimary : Theme.textRead)
                     .lineLimit(1)
                     .mask(Rectangle().padding(.vertical, -6))
-                MarkedText(text: excerpt ?? thread.snippet, terms: terms).textStyle(.listSecondary).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                MarkedText(text: excerpt ?? thread.snippet.listPreview, terms: terms).textStyle(.listSecondary).foregroundStyle(Theme.textTertiary).lineLimit(1)
                     .mask(Rectangle().padding(.vertical, -6))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -476,26 +514,6 @@ struct ThreadRow: View {
             .padding(.trailing, Theme.Metrics.dateTrailing - Theme.Metrics.rowInset)
         }
         .frame(height: Theme.Metrics.rowHeight)
-        .background(fill(selected: selected, filled: filled), in: shape)
-        .overlay(alignment: .bottom) {
-            if !isLast && !filled && !nextFilled {
-                Hairline()
-                    .padding(.leading, Theme.Metrics.senderX - Theme.Metrics.rowInset)
-                    .padding(.trailing, Theme.Metrics.dateTrailing - Theme.Metrics.rowInset)
-            }
-        }
-        .overlay(alignment: .trailing) {
-            if isHovering {
-                HoverActions(thread: thread).padding(.trailing, 17 - Theme.Metrics.rowInset)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { tap() }
-        .padding(.horizontal, Theme.Metrics.rowInset)
-        .onLiveHover { h in
-            withAnimation(h ? Theme.Motion.hover : nil) { hovering = h }
-            onHover?(h)
-        }
     }
 
     private var isHovering: Bool { hovering || Self.snapshotHoverId == thread.id }
@@ -520,18 +538,20 @@ struct ThreadRow: View {
     @ViewBuilder
     private var chips: some View {
         let chips = thread.userLabelIds.compactMap { labels[$0] }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        if !chips.isEmpty || thread.hasAttachments {
+        if !chips.isEmpty || thread.isStarred {
             HStack(spacing: 4) {
                 ForEach(chips.prefix(3)) { ListChip(label: $0) }
                 if chips.count > 3 {
                     Text("+\(chips.count - 3)").textStyle(.listSecondary).foregroundStyle(Theme.textTertiary).fixedSize()
                 }
-                if thread.hasAttachments {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.iconSecondary)
+                if thread.isStarred {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textOrange)
                         .frame(width: Theme.Metrics.iconMini, height: Theme.Metrics.iconMini)
                         .padding(.leading, 2)
+                        .opacity(isHovering ? 0 : 1)
+                        .accessibilityLabel("Starred")
                 }
             }
             .padding(.leading, 12)

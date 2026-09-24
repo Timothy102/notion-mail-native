@@ -306,6 +306,17 @@ private struct MessageView: View {
     }
 
     private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            SenderAvatar(address: message.sender, size: 36)
+            headerText
+        }
+        .padding(.top, Theme.Metrics.messageHeaderTop)
+        .padding(.horizontal, Theme.Metrics.readerPadding)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: collapse)
+    }
+
+    private var headerText: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(message.sender.displayName).textStyle(.bodyMedium).foregroundStyle(Theme.textPrimary).lineLimit(1).layoutPriority(1)
@@ -322,10 +333,6 @@ private struct MessageView: View {
             }
             Text(recipients).textStyle(.body).foregroundStyle(Theme.textTertiary).lineLimit(1)
         }
-        .padding(.top, Theme.Metrics.messageHeaderTop)
-        .padding(.horizontal, Theme.Metrics.readerPadding)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: collapse)
     }
 
     /// "To me, Alex" (cc included).
@@ -450,21 +457,9 @@ private struct AttachmentList: View {
     private func open(_ a: Attachment) {
         guard opening == nil else { return }
         opening = a.id
-        let gmail = app.gmail
         Task {
             defer { opening = nil }
-            do {
-                let data: Data
-                if let d = a.data { data = d }
-                else if let gmail, let remoteId = a.gmailAttachmentId { data = try await gmail.attachment(messageId: a.messageId, id: remoteId) }
-                else { throw CocoaError(.fileReadNoSuchFile) }
-                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("MailAttachments/\(a.messageId)", isDirectory: true)
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                let name = (a.filename.isEmpty ? "attachment" : a.filename).replacingOccurrences(of: "/", with: "-")
-                let url = dir.appendingPathComponent(name)
-                try data.write(to: url, options: .atomic)
-                NSWorkspace.shared.open(url)
-            } catch {
+            do { NSWorkspace.shared.open(try await Attachment.file(id: a.id, store: app.store, gmail: app.gmail)) } catch {
                 app.show(Toast("Couldn't open \(a.filename): \(error.localizedDescription)"))
             }
         }

@@ -39,6 +39,8 @@ public final class AppState {
     public let avatarURL: URL?
 
     public var account: Account?
+    /// Sender pictures for list rows and message headers.
+    public let avatars: SenderAvatars
     /// Google profile photo; nil shows the letter avatar.
     public var avatarImage: PlatformImage?
     public var syncStatus: SyncStatus = .idle
@@ -80,6 +82,8 @@ public final class AppState {
         self.gmail = gmail
         self.avatarURL = avatarURL
         actions = MailActions(store: store, gmail: gmail)
+        avatars = SenderAvatars(directory: avatarURL?.deletingLastPathComponent().appending(path: "avatars", directoryHint: .isDirectory),
+                                ownPhoto: avatarURL, store: store, isDemo: gmail == nil)
         account = try? store.db.read(Store.account)
         avatarImage = avatarURL.flatMap(Platform.image(contentsOf:))
         if gmail != nil { theme = UserDefaults.standard.string(forKey: Self.themeKey).flatMap(ThemePreference.init(rawValue:)) ?? .system }
