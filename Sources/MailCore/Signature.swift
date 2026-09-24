@@ -17,8 +17,16 @@ public enum Signature {
         if let identity, let local = try String.fetchOne(db, sql: "SELECT value FROM kv WHERE key = ?", arguments: [localKey(identity.email)]) {
             return local
         }
-        guard let identity, !identity.isPrimary, !MIME.plainText(fromHTML: identity.signature).isEmpty else { return defaultHTML }
+        guard let identity, !identity.isPrimary, !MIME.plainText(fromHTML: identity.signature).isEmpty,
+              !isTimsSignature(identity.signature) else { return defaultHTML }
         return identity.signature
+    }
+
+    /// An alias whose Gmail signature is Tim's own ("My kindest, Tim / LinkedIn, Cal.com") gets the canonical
+    /// `defaultHTML` (Notion markup, current links); any other alias signature, like a company one, is kept.
+    static func isTimsSignature(_ html: String) -> Bool {
+        func words(_ h: String) -> String { MIME.plainText(fromHTML: h).split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        return words(html) == words(defaultHTML)
     }
 
     /// Signature HTML as display text plus the linked ranges (UTF-16, relative to `text`).

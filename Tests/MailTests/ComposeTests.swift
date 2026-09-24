@@ -223,3 +223,19 @@ final class ComposeTests: XCTestCase {
         XCTAssertTrue(try threads(app, .drafts).contains { $0.id == d.threadId && $0.subject == "Fresh" })
     }
 }
+
+final class SignatureChoiceTests: XCTestCase {
+    func testAliasWithTimsGmailSignatureUsesCanonicalDefault() throws {
+        let gmailCopy = #"<div dir="ltr"><i>My kindest, </i><div><i>Tim</i><div><br></div><div><i><a href="https://www.linkedin.com/in/tim-cvetko-32842a1a6/">LinkedIn</a>, <a href="https://cal.com/timcvetko">Cal.com</a></i></div></div></div>"#
+        XCTAssertTrue(Signature.isTimsSignature(gmailCopy))
+        XCTAssertFalse(Signature.isTimsSignature("<b>Tim Cvetko</b><br>Shadow · Founder"))
+        let db = try DatabaseQueue()
+        try db.write { try $0.execute(sql: "CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT)") }
+        let alias = SendAs(email: "tim@timcvetko.com", displayName: "Tim", signature: gmailCopy, isDefault: true, isPrimary: false, replyTo: nil)
+        let company = SendAs(email: "tim@shadow.co", displayName: "Tim", signature: "<b>Tim Cvetko</b><br>Shadow · Founder", isDefault: false, isPrimary: false, replyTo: nil)
+        try db.read { db in
+            XCTAssertEqual(try Signature.html(for: alias, db: db), Signature.defaultHTML)
+            XCTAssertEqual(try Signature.html(for: company, db: db), company.signature)
+        }
+    }
+}

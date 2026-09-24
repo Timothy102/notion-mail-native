@@ -293,7 +293,7 @@ extension MCPServer {
                     throw ToolError("\(asked) isn't a send-as identity of \(email). Identities: \(identities.map(\.email).joined(separator: ", ")).")
                 }
                 return match
-            } ?? identities.first
+            } ?? identities.first(where: \.isDefault) ?? identities.first(where: \.isPrimary) ?? identities.first
             let html = try Signature.html(for: identity, db: db)
             let rendered = Signature.render(html)
             return SignatureResult(email: identity?.email ?? email, displayName: identity?.displayName ?? "", html: html,
