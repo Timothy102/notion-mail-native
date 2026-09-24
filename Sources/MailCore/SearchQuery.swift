@@ -249,6 +249,47 @@ extension Store {
         }
     }
 
+    /// Like `search`, one row per matching message rather than per thread (labels, unread and attachments
+    /// are the message's own). Newest first.
+    public static func searchMessages(_ db: Database, _ query: SearchQuery, limit: Int = 200) throws -> [Message] {
+        guard !query.isEmpty else { return [] }
+        var filters: [String] = []
+        var arguments: StatementArguments = []
+        if let positive = ftsExpression(query.include) {
+            filters.append("m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)")
+            arguments += [positive]
+        }
+        if let negative = ftsExpression(query.exclude, joinedBy: " OR ") {
+            filters.append("m.rowid NOT IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)")
+            arguments += [negative]
+        }
+        if let after = query.after {
+            filters.append("m.date >= ?")
+            arguments += [after]
+        }
+        if let before = query.before {
+            filters.append("m.date < ?")
+            arguments += [before]
+        }
+        let allLabels = try MailLabel.fetchAll(db)
+        func has(_ ids: [String], _ yes: Bool = true) -> String {
+            (yes ? "" : "NOT ") + "EXISTS (SELECT 1 FROM json_each(m.labelIds) WHERE value IN \(sqlList(ids)))"
+        }
+        filters += query.labels.map { has(labelIds($0, allLabels)) }
+        filters += query.excludedLabels.map { has(labelIds($0, allLabels), false) }
+        if !query.includesSpamAndTrash { filters.append(has(["SPAM", "TRASH"], false)) }
+        if let v = query.isUnread { filters.append(has(["UNREAD"], v)) }
+        if let v = query.isStarred { filters.append(has(["STARRED"], v)) }
+        if let v = query.hasAttachment {
+            filters.append((v ? "" : "NOT ") + "EXISTS (SELECT 1 FROM attachments a WHERE a.messageId = m.id AND NOT a.isInline)")
+        }
+        arguments += [limit]
+        return try Message.fetchAll(db, sql: """
+            SELECT m.* FROM messages m \(filters.isEmpty ? "" : "WHERE " + filters.joined(separator: " AND "))
+            ORDER BY m.internalDate DESC LIMIT ?
+            """, arguments: arguments)
+    }
+
     /// Threads by id, newest first: what Gmail's search returned once ingested.
     public static func threads(_ db: Database, ids: [String]) throws -> [MailThread] {
         try MailThread.filter(keys: ids).order(Column("lastDate").desc).fetchAll(db)
