@@ -256,7 +256,7 @@ enum Loopback {
 /// move back to the Keychain if the app ever ships with a stable signing identity.
 public enum Secrets {
     private static let lock = NSLock()
-    nonisolated(unsafe) static var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    package nonisolated(unsafe) static var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appending(path: "Mail/secrets.json")
 
     public static func get(_ key: String) -> String? {

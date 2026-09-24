@@ -9,11 +9,15 @@ public struct LabelSnapshot: Sendable, Hashable {
 public final class Store: Sendable {
     public let db: DatabaseQueue
 
-    /// nil path = in-memory (demo, tests).
+    /// nil path = in-memory (demo, tests). A file is opened in WAL mode with a 5 s busy timeout, because the
+    /// app and the nmail-mcp server open the same database from two processes.
     public init(path: String? = nil) throws {
         if let path {
             try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-            db = try DatabaseQueue(path: path)
+            var config = Configuration()
+            config.journalMode = .wal
+            config.busyMode = .timeout(5)
+            db = try DatabaseQueue(path: path, configuration: config)
         } else {
             db = try DatabaseQueue()
         }
@@ -202,17 +206,29 @@ public final class Store: Sendable {
     /// Applies label changes to every message of the given threads. Returns what to pass to `restore` to undo.
     @discardableResult
     public func modify(threadIds: [String], add: Set<String> = [], remove: Set<String> = []) throws -> LabelSnapshot {
+        try modify(Message.filter(threadIds.contains(Column("threadId"))), add: add, remove: remove, threads: threadIds)
+    }
+
+    /// Like `modify(threadIds:)`, for single messages.
+    @discardableResult
+    public func modify(messageIds: [String], add: Set<String> = [], remove: Set<String> = []) throws -> LabelSnapshot {
+        try modify(Message.filter(keys: messageIds), add: add, remove: remove, threads: [])
+    }
+
+    private func modify(_ messages: QueryInterfaceRequest<Message>, add: Set<String>, remove: Set<String>, threads: [String]) throws -> LabelSnapshot {
         try db.write { db in
             var before: [String: [String]] = [:]
-            for var m in try Message.filter(threadIds.contains(Column("threadId"))).fetchAll(db) {
+            var touched = Set(threads)
+            for var m in try messages.fetchAll(db) {
                 before[m.id] = m.labelIds
                 var labels = Set(m.labelIds)
                 labels.subtract(remove)
                 labels.formUnion(add)
                 m.labelIds = labels.sorted()
                 try m.update(db)
+                touched.insert(m.threadId)
             }
-            for id in threadIds { try Self.refreshThread(db, id: id) }
+            for id in touched { try Self.refreshThread(db, id: id) }
             return LabelSnapshot(labelIds: before)
         }
     }

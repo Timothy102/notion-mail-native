@@ -73,7 +73,7 @@ public struct Sync: Sendable {
     }
 
     /// Months the last completed backfill covered; widening `backfillMonths` backfills the difference.
-    private var backfilledMonths: Int {
+    public var backfilledMonths: Int {
         (try? store.get(Self.backfilledMonthsKey)).flatMap { $0.flatMap(Int.init) } ?? Self.legacyBackfillMonths
     }
     /// Installs that finished a backfill before this key existed used a 3-month window.
@@ -161,6 +161,26 @@ public struct Sync: Sendable {
         try store.set("historyId", historyId)
     }
 
+    /// History deltas only, never a backfill: for readers that want fresh mail without the app's full sync.
+    /// Returns false when there is nothing to resume from (no history id yet, or Gmail expired it); the app's
+    /// next full sync handles that.
+    @discardableResult
+    public func incremental() async throws -> Bool {
+        guard let historyId = try store.get("historyId") else { return false }
+        do { try await applyHistory(since: historyId) }
+        catch let e as GmailError where e.status == 404 { return false }
+        return true
+    }
+
+    /// When a history sync (the app's or nmail-mcp's) last finished, as epoch seconds.
+    public static let historySyncedAtKey = "historySyncedAt"
+
+    /// Labels and drafts, the parts of `run` outside mail history.
+    public func syncLabelsAndDrafts() async throws {
+        try syncLabels(try await gmail.labels())
+        try await syncDrafts()
+    }
+
     private func applyHistory(since start: String) async throws {
         var changes = HistoryChanges()
         var latest = start
@@ -174,6 +194,7 @@ public struct Sync: Sendable {
         let unknown = try apply(changes)
         try ingest(try await gmail.messages(unknown.sorted()))
         try store.set("historyId", latest)
+        try store.set(Self.historySyncedAtKey, String(Int(Date.now.timeIntervalSince1970)))
     }
 
     /// Applies deletions and label changes to known messages in one transaction. Returns the ids to fetch:

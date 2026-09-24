@@ -1,13 +1,15 @@
 #!/bin/sh
-# Builds a release NMail.app and installs it into /Applications.
+# Builds a release NMail.app (with the nmail-mcp server inside) and installs it into /Applications.
 set -e
 cd "$(dirname "$0")/.."
 swift build -c release --product Mail
+swift build -c release --product nmail-mcp
 bin="$(swift build -c release --product Mail --show-bin-path)"
 app="$bin/NMail.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/Mail" "$app/Contents/MacOS/Mail"
+cp "$bin/nmail-mcp" "$app/Contents/MacOS/nmail-mcp"
 cp -R "$bin/Mail_Mail.bundle" "$app/Contents/Resources/"
 cp Icon/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 cat > "$app/Contents/Info.plist" <<PLIST

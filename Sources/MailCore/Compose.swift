@@ -55,6 +55,8 @@ public struct ComposeDraft: Sendable, Hashable {
     public var attachments: [ComposeAttachment] = []
     public var draftId: String?
     public var draftMessageId: String?
+    /// `body` is light markdown (see `LightMarkdown`); nmail-mcp sets it, the composer doesn't.
+    public var markdown = false
     /// One per compose session, so a save that finishes after the composer moved on to another
     /// request cannot hand that request its draft and thread ids.
     public private(set) var sessionId = UUID()
@@ -76,7 +78,7 @@ public struct ComposeDraft: Sendable, Hashable {
     public var signatureText: String { Signature.render(signature).text }
 
     /// `body` around the signature block, nil when there is none or it was edited.
-    var signatureSplit: (before: String, after: String)? {
+    package var signatureSplit: (before: String, after: String)? {
         guard !signature.isEmpty, let range = body.range(of: Self.signatureBlock(signatureText), options: .backwards) else { return nil }
         return (String(body[..<range.lowerBound]), String(body[range.upperBound...]))
     }
@@ -132,11 +134,11 @@ public struct ComposeDraft: Sendable, Hashable {
     static let notionStyle = #"<style>*{-webkit-font-smoothing:antialiased;line-height:1.3;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}p{margin:0px 0px 0px 0px !important;min-height:19.5px;}a.custom-editor-link-class{color:rgba(120,119,116,1);cursor:pointer;text-decoration-thickness:0.05em;text-underline-offset:3px;}</style>"#
 
     /// One `<p dir="auto">` per line like Notion Mail; empty lines hold a zero-width space so Gmail keeps their height.
-    static func notionParagraphs(_ text: String) -> String {
+    static func notionParagraphs(_ text: String, markdown: Bool = false) -> String {
         let trimmed = text.trimmingCharacters(in: .newlines)
         guard !trimmed.trimmingCharacters(in: .whitespaces).isEmpty else { return "" }
         return trimmed.components(separatedBy: "\n").map { line in
-            "<p dir=\"auto\">" + (line.isEmpty ? "\u{200B}" : MIME.htmlEscape(line)) + "</p>"
+            "<p dir=\"auto\">" + (line.isEmpty ? "\u{200B}" : markdown ? LightMarkdown.html(line) : MIME.htmlEscape(line)) + "</p>"
         }.joined()
     }
 
@@ -145,13 +147,14 @@ public struct ComposeDraft: Sendable, Hashable {
     /// Quotes are appended by `MIME.build`.
     public func outgoing() -> OutgoingMessage {
         let split = signatureSplit
-        let text = split.map { $0.before + Self.signatureBlock(Signature.render(signature).textWithURLs) + $0.after } ?? body
+        let plain = { (s: String) in markdown ? LightMarkdown.text(s) : s }
+        let text = split.map { plain($0.before) + Self.signatureBlock(Signature.render(signature).textWithURLs) + plain($0.after) } ?? plain(body)
         let gap = "<p dir=\"auto\">\u{200B}</p>"
         let bodyHTML = split.map { s in
-            let typed = Self.notionParagraphs(s.before)
-            let after = Self.notionParagraphs(s.after)
+            let typed = Self.notionParagraphs(s.before, markdown: markdown)
+            let after = Self.notionParagraphs(s.after, markdown: markdown)
             return (typed.isEmpty ? "" : typed + gap) + signature + (after.isEmpty ? "" : gap + after)
-        } ?? Self.notionParagraphs(body)
+        } ?? Self.notionParagraphs(body, markdown: markdown)
         var out = OutgoingMessage(
             from: from, to: to, cc: cc, bcc: bcc, subject: subject, text: text, html: Self.notionStyle + bodyHTML, quoted: quoted,
             inReplyTo: inReplyTo, references: references, threadId: threadId,
@@ -342,7 +345,7 @@ public final class Outbox {
     // MARK: Drafts
 
     /// Fills in bytes for forwarded attachments that still live on Gmail.
-    func resolved(_ draft: ComposeDraft) async throws -> ComposeDraft {
+    nonisolated static func resolved(_ draft: ComposeDraft, gmail: GmailClient?) async throws -> ComposeDraft {
         var d = draft
         for i in d.attachments.indices where d.attachments[i].data == nil {
             guard let gmail, let m = d.attachments[i].gmailMessageId, let a = d.attachments[i].gmailAttachmentId else { continue }
@@ -354,7 +357,12 @@ public final class Outbox {
     /// Creates or updates the draft. Returns it with the draft, message and thread ids filled in.
     public func saveDraft(_ draft: ComposeDraft) async throws -> ComposeDraft {
         guard let store else { return draft }
-        var d = try await resolved(draft)
+        return try await Self.saveDraft(draft, store: store, gmail: gmail)
+    }
+
+    /// `saveDraft` without an app: Gmail when there is a client, then the store. nmail-mcp saves through here.
+    public nonisolated static func saveDraft(_ draft: ComposeDraft, store: Store, gmail: GmailClient?) async throws -> ComposeDraft {
+        var d = try await resolved(draft, gmail: gmail)
         let out = d.outgoing()
         let draftId: String, messageId: String, threadId: String
         if let gmail {
@@ -425,31 +433,39 @@ public final class Outbox {
     private func deliver(_ p: PendingSend) async {
         guard let store else { return }
         do {
-            let d = try await resolved(p.draft)
-            let out = d.outgoing()
-            var id = Self.localId(), threadId = d.threadId ?? id, labels = ["SENT"]
-            if let gmail {
-                let raw = MIME.build(out)
-                let sent: GmailMessage
-                if let draftId = d.draftId {
-                    _ = try await gmail.updateDraft(draftId, raw: raw, threadId: d.threadId)
-                    sent = try await gmail.sendDraft(draftId)
-                } else {
-                    sent = try await gmail.send(raw: raw, threadId: d.threadId)
-                }
-                id = sent.id
-                threadId = sent.threadId
-                labels = sent.labelIds ?? labels
-            }
-            if let draftId = d.draftId { try store.deleteDraft(id: draftId) }
-            try Self.insert(out, id: id, threadId: threadId, labels: labels, into: store)
+            try await Self.sendNow(p.draft, store: store, gmail: gmail)
             app?.show(Toast("Message sent"))
-            if p.archiveThread, let t = d.threadId { app?.actions.archive([t]) }
+            if p.archiveThread, let t = p.draft.threadId { app?.actions.archive([t]) }
         } catch {
             app?.show(Toast("Couldn't send: \(error.localizedDescription)", actionTitle: "Open") { [weak self] in
                 self?.reopen(p.draft, as: p.reopen)
             })
         }
+    }
+
+    /// Sends at once (through the saved Gmail draft, if any) and stores the sent message. The send path
+    /// after the undo window, and nmail-mcp's. Returns the sent message's id and thread id.
+    @discardableResult
+    public nonisolated static func sendNow(_ draft: ComposeDraft, store: Store, gmail: GmailClient?) async throws -> (id: String, threadId: String) {
+        let d = try await resolved(draft, gmail: gmail)
+        let out = d.outgoing()
+        var id = localId(), threadId = d.threadId ?? id, labels = ["SENT"]
+        if let gmail {
+            let raw = MIME.build(out)
+            let sent: GmailMessage
+            if let draftId = d.draftId {
+                _ = try await gmail.updateDraft(draftId, raw: raw, threadId: d.threadId)
+                sent = try await gmail.sendDraft(draftId)
+            } else {
+                sent = try await gmail.send(raw: raw, threadId: d.threadId)
+            }
+            id = sent.id
+            threadId = sent.threadId
+            labels = sent.labelIds ?? labels
+        }
+        if let draftId = d.draftId { try store.deleteDraft(id: draftId) }
+        try insert(out, id: id, threadId: threadId, labels: labels, into: store)
+        return (id, threadId)
     }
 
     // MARK: Signatures
@@ -468,10 +484,10 @@ public final class Outbox {
 
     // MARK: Helpers
 
-    static func localId() -> String { "local-" + UUID().uuidString.lowercased() }
+    nonisolated static func localId() -> String { "local-" + UUID().uuidString.lowercased() }
 
     /// Stores what was sent or saved through the same parse path as synced mail.
-    static func insert(_ out: OutgoingMessage, id: String, threadId: String, labels: [String], into store: Store) throws {
+    nonisolated static func insert(_ out: OutgoingMessage, id: String, threadId: String, labels: [String], into store: Store) throws {
         let root = MIME.parse(MIME.build(out))
         let (message, parts) = Message.make(id: id, threadId: threadId, labelIds: labels,
                                             internalDate: Int64(out.date.timeIntervalSince1970 * 1000), snippet: nil, root: root)
@@ -481,4 +497,66 @@ public final class Outbox {
 
 extension AppState {
     public var outbox: Outbox { Outbox.attached(to: self) }
+}
+
+/// The markdown an LLM writes in mail: `**bold**`, `*italic*` or `_italic_`, `[text](url)`, and `- ` / `* ` bullets.
+/// Anything else stays literal text.
+public enum LightMarkdown {
+    private static let link = #"\[([^\]\n]+)\]\(((?:https?:|mailto:)[^)\s]+)\)"#
+    private static let bareURL = #"https?://[^\s<>"\x{E000}\x{E001}]+"#
+    private static let emphasis = [
+        (#"\*\*(?=\S)(.+?)(?<=\S)\*\*"#, "strong"),
+        (#"(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])"#, "em"),
+        (#"(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)"#, "em"),
+    ]
+
+    /// One line as paragraph HTML (escaped; links styled like the signature's).
+    public static func html(_ line: String) -> String {
+        var kept: [String] = []
+        var s = replace(bullet(line), link) { g in
+            keep(#"<a class="custom-editor-link-class" href=""# + MIME.htmlEscape(g[2]) + #"" style="color: rgb(120, 119, 116);">"#
+                 + MIME.htmlEscape(g[1]) + "</a>", in: &kept)
+        }
+        s = replace(s, bareURL) { keep(MIME.htmlEscape($0[0]), in: &kept) }
+        s = MIME.htmlEscape(s)
+        for (pattern, tag) in emphasis { s = replace(s, pattern) { "<\(tag)>\($0[1])</\(tag)>" } }
+        return restore(s, kept)
+    }
+
+    /// The text/plain form: markers dropped, links as "text (url)".
+    public static func text(_ body: String) -> String {
+        body.components(separatedBy: "\n").map { line in
+            var kept: [String] = []
+            var s = replace(bullet(line), link) { keep("\($0[1]) (\($0[2]))", in: &kept) }
+            s = replace(s, bareURL) { keep($0[0], in: &kept) }
+            for (pattern, _) in emphasis { s = replace(s, pattern) { $0[1] } }
+            return restore(s, kept)
+        }.joined(separator: "\n")
+    }
+
+    private static func bullet(_ line: String) -> String {
+        line.replacingOccurrences(of: #"^(\s*)[-*] (?=\S)"#, with: "$1• ", options: .regularExpression)
+    }
+
+    /// Parks `s` behind a placeholder so later patterns (emphasis inside URLs) can't touch it.
+    private static func keep(_ s: String, in kept: inout [String]) -> String {
+        kept.append(s)
+        return "\u{E000}\(kept.count - 1)\u{E001}"
+    }
+
+    private static func restore(_ s: String, _ kept: [String]) -> String {
+        replace(s, "\u{E000}(\\d+)\u{E001}") { kept[Int($0[1])!] }
+    }
+
+    /// Replaces every match of `pattern`; `transform` gets the capture groups, [0] being the whole match.
+    private static func replace(_ s: String, _ pattern: String, _ transform: ([String]) -> String) -> String {
+        let regex = try! NSRegularExpression(pattern: pattern)
+        let ns = s as NSString
+        var out = s
+        for m in regex.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let groups = (0..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? "" : ns.substring(with: m.range(at: $0)) }
+            out = (out as NSString).replacingCharacters(in: m.range, with: transform(groups))
+        }
+        return out
+    }
 }
