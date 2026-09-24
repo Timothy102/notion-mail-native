@@ -56,7 +56,34 @@ extension Store {
 }
 
 extension Attachment {
-    public enum Kind: Sendable { case pdf, image, document, spreadsheet, presentation, archive, other }
+    public enum Kind: Sendable {
+        case pdf, image, document, spreadsheet, presentation, archive, other
+
+        /// SF Symbol for chips.
+        public var symbol: String {
+            switch self {
+            case .pdf: "doc.richtext.fill"
+            case .image: "photo.fill"
+            case .document: "doc.text.fill"
+            case .spreadsheet: "tablecells.fill"
+            case .presentation: "rectangle.on.rectangle.angled.fill"
+            case .archive: "doc.zipper"
+            case .other: "doc.fill"
+            }
+        }
+
+        /// A `LabelColor` name for the symbol, Gmail's convention in Notion's palette.
+        public var colorName: String {
+            switch self {
+            case .pdf: "red"
+            case .image: "orange"
+            case .document: "blue"
+            case .spreadsheet: "green"
+            case .presentation: "yellow"
+            case .archive, .other: "gray"
+            }
+        }
+    }
 
     public var kind: Kind {
         let type = mimeType.lowercased()

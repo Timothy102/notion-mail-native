@@ -149,8 +149,13 @@ public enum Fixtures {
             let start = cal.startOfDay(for: cal.date(byAdding: .day, value: -daysAgo, to: now)!)
             return cal.date(byAdding: .minute, value: h * 60 + m, to: start)!
         }
-        /// Today, but never in the future: clamps to a few minutes ago.
-        func today(_ h: Int, _ m: Int = 0) -> Date { min(day(0, h, m), minutesAgo(3 + h)) }
+        /// Today, but never in the future: times after "3 minutes ago" squeeze into the last 3 minutes, in order,
+        /// so a thread reads the same whatever time the demo (or a test) runs.
+        func today(_ h: Int, _ m: Int = 0) -> Date {
+            let date = day(0, h, m), cutoff = minutesAgo(3)
+            guard date > cutoff else { return date }
+            return cutoff.addingTimeInterval(Double(h * 60 + m) / 1440 * 170)
+        }
         func nextWeekday(_ weekday: Int, _ h: Int) -> Date {
             let next = cal.nextDate(after: now, matching: DateComponents(hour: h, weekday: weekday), matchingPolicy: .nextTime)!
             return next
@@ -170,7 +175,7 @@ public enum Fixtures {
                                                    data: gradientPNG(hue: 0.58, width: 180, height: 180), contentId: "qr-7HKQ2P@dalmatia-air")]),
             ]),
             T(subject: "Your Stripe verification code", labels: ["INBOX"], unread: true, messages: [
-                M(from: stripeVerify, to: [me], date: d.minutesAgo(2),
+                M(from: stripeVerify, to: [me], date: d.now.addingTimeInterval(-5),
                   text: "Your verification code is 143819. It expires in 10 minutes. If you didn't try to sign in to Stripe, you can ignore this email."),
             ]),
             T(subject: "Your travel insurance ID card", labels: ["INBOX", "Label_3"], messages: [
@@ -615,7 +620,7 @@ public enum Fixtures {
             (a("Google Workspace", "workspace-noreply@google.com"), "Your storage is almost full", "You've used 28.4 GB of 30 GB. Free up space or upgrade to keep receiving email.", 330, 10, ["INBOX"], false),
         ]
         return one.map { from, subject, text, days, hour, labels, unread in
-            T(subject: subject, labels: labels, unread: unread, messages: [M(from: from, to: [me], date: d.day(days, hour, 17), text: text)])
+            T(subject: subject, labels: labels, unread: unread, messages: [M(from: from, to: [me], date: days == 0 ? d.today(hour, 17) : d.day(days, hour, 17), text: text)])
         }
     }
 

@@ -1,4 +1,5 @@
 import MailCore
+import QuickLook
 import SwiftUI
 
 /// Letter avatar in a hairline circle (SPEC §5.13), or a photo cropped to the circle.
@@ -46,9 +47,125 @@ struct LabelChip: View {
     }
 }
 
+/// One device pixel tall.
 struct Hairline: View {
+    var color = Theme.divider
+    @Environment(\.displayScale) private var scale
+
     var body: some View {
-        Rectangle().fill(Theme.divider).frame(height: 1 / 3)
+        Rectangle().fill(color).frame(height: 1 / scale)
+    }
+}
+
+/// A sender's picture from `SenderAvatars`, or a filled circle in a stable Notion color with a white initial.
+struct SenderAvatar: View {
+    let address: EmailAddress
+    var size: CGFloat = 40
+    @Environment(AppState.self) private var app
+    @State private var entry: SenderAvatars.Entry?
+    static let palette: [LabelColor] = [.blue, .green, .orange, .purple, .pink, .red, .brown, .yellow]
+
+    var body: some View {
+        Group {
+            if case .image(let image, let fullBleed) = entry {
+                let picture = Image(decorative: image, scale: 1).resizable().interpolation(.high)
+                if fullBleed {
+                    picture.scaledToFill()
+                } else {
+                    picture.scaledToFit().padding(size * 0.18).background(.white)
+                }
+            } else {
+                Self.palette[SenderAvatars.colorIndex(address.email, count: Self.palette.count)].dot
+                    .overlay {
+                        Text(SenderAvatars.initial(address.displayName))
+                            .font(.system(size: (size * 0.45).rounded(), weight: .medium))
+                            .foregroundStyle(.white)
+                    }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay { if case .image = entry { Circle().strokeBorder(Theme.border, lineWidth: 0.5) } }
+        .accessibilityHidden(true)
+        .task(id: address.email) {
+            entry = app.avatars.cached(address.email)
+            if entry == nil { entry = await app.avatars.resolve(address.email) }
+        }
+    }
+}
+
+/// Up to two attachment chips and "+N" under a row's snippet; a tap opens the file in Quick Look.
+struct AttachmentChips: View {
+    let files: [Attachment]
+    @Environment(AppState.self) private var app
+    @State private var preview: URL?
+    @State private var opening: String?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(files.prefix(2)) { file in
+                Button { open(file) } label: {
+                    HStack(spacing: 6) {
+                        if opening == file.id {
+                            ProgressView().controlSize(.mini).frame(width: 16)
+                        } else {
+                            Image(systemName: file.kind.symbol).font(.system(size: 13)).foregroundStyle(LabelColor(named: file.kind.colorName).dot)
+                                .frame(width: 16)
+                        }
+                        Text(file.filename.isEmpty ? "Untitled" : file.filename)
+                            .font(.footnote).foregroundStyle(Theme.textPrimary).lineLimit(1).truncationMode(.middle)
+                            .frame(maxWidth: 150, alignment: .leading)
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: 28)
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+                    .contentShape(Rectangle())
+                    .fixedSize()
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Open \(file.filename)")
+            }
+            if files.count > 2 {
+                Text("+\(files.count - 2)").font(.footnote).foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .quickLookPreview($preview)
+    }
+
+    private func open(_ file: Attachment) {
+        guard opening == nil else { return }
+        opening = file.id
+        Task {
+            defer { opening = nil }
+            do { preview = try await Attachment.file(id: file.id, store: app.store, gmail: app.gmail) } catch {
+                app.show(Toast("Couldn't open \(file.filename): \(error.localizedDescription)"))
+            }
+        }
+    }
+}
+
+/// Gmail's "Copy code: 143819" pill.
+struct CodeChip: View {
+    let code: String
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        Button {
+            UIPasteboard.general.string = code
+            app.show(Toast("Copied \(code)"))
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.on.doc").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.iconSecondary)
+                (Text("Copy code: ").foregroundStyle(Theme.textSecondary) + Text(code).fontWeight(.semibold).foregroundStyle(Theme.textPrimary))
+                    .font(.footnote).monospacedDigit()
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 28)
+            .background(LabelColor.lightGray.fill, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("Copy code \(code)")
     }
 }
 
@@ -121,7 +238,7 @@ struct SkeletonRows: View {
             ForEach(0..<count, id: \.self) { i in
                 let (sender, subject, snippet) = Self.widths[i % Self.widths.count]
                 HStack(alignment: .top, spacing: 12) {
-                    Circle().fill(Theme.skeleton).frame(width: 36, height: 36)
+                    Circle().fill(Theme.skeleton).frame(width: 40, height: 40)
                     GeometryReader { geo in
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {

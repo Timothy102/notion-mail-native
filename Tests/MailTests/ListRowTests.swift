@@ -69,6 +69,17 @@ final class ListRowTests: XCTestCase {
         XCTAssertEqual(extras.values.compactMap(\.code), ["143819"])
     }
 
+    func testAttachmentFileFromStore() async throws {
+        let store = try Store()
+        try Fixtures.seed(store)
+        let threads = try await store.db.read { try Store.threads($0, in: .inbox) }
+        let extras = try await store.db.read { try Store.rowExtras($0, threadIds: threads.map(\.id)) }
+        let pdf = try XCTUnwrap(extras.values.flatMap(\.files).first { $0.filename == "IDCard_359W2K.pdf" })
+        let url = try await Attachment.file(id: pdf.id, store: store, gmail: nil)
+        XCTAssertEqual(url.lastPathComponent, "IDCard_359W2K.pdf")
+        XCTAssertTrue(try Data(contentsOf: url).starts(with: Data("%PDF".utf8)))
+    }
+
     func testAvatarHelpers() {
         XCTAssertEqual(SenderAvatars.baseDomain("mail.notion.so"), "notion.so")
         XCTAssertEqual(SenderAvatars.baseDomain("news.bbc.co.uk"), "bbc.co.uk")

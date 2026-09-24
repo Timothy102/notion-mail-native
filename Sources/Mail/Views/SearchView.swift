@@ -8,6 +8,7 @@ struct SearchView: View {
     @Environment(AppState.self) private var app
     @State private var local = Live<[SearchHit]>([])
     @State private var remote = Live<[MailThread]>([])
+    @State private var extras = Live<[String: ThreadRowExtras]>([:])
     @State private var gmail = GmailState.idle
     @State private var labels = Live<[MailLabel]>([])
     @State private var unreadOnly = false
@@ -56,7 +57,11 @@ struct SearchView: View {
         .onChange(of: query, initial: true) { observeLocal() }
         .task(id: query) { await searchGmail() }
         .onAppear { labels.observe(app.store) { try Store.labels($0) } }
-        .onChange(of: hits.map(\.id), initial: true) { app.visibleThreadIds = hits.map(\.id) }
+        .onChange(of: hits.map(\.id), initial: true) {
+            let ids = hits.map(\.thread.id)
+            app.visibleThreadIds = hits.map(\.id)
+            extras.observe(app.store) { try Store.rowExtras($0, threadIds: ids) }
+        }
     }
 
     private func list(_ hits: [SearchHit], _ layout: RowLayout) -> some View {
@@ -66,7 +71,7 @@ struct SearchView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(hits.enumerated()), id: \.element.id) { i, hit in
-                        ThreadRow(thread: hit.thread, labels: byId, layout: layout, isLast: i == hits.count - 1,
+                        ThreadRow(thread: hit.thread, extras: extras.value[hit.thread.id], labels: byId, layout: layout, isLast: i == hits.count - 1,
                                   terms: terms, excerpt: hit.excerpt)
                             .id(hit.id)
                     }

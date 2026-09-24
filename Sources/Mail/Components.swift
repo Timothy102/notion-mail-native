@@ -1,3 +1,4 @@
+import AppKit
 import MailCore
 import SwiftUI
 
@@ -145,6 +146,118 @@ struct Avatar: View {
                     .foregroundStyle(fill == nil ? Theme.iconSecondary : Theme.textContrast)
             }
             .frame(width: size, height: size)
+    }
+}
+
+/// A sender's picture from `SenderAvatars`, or a filled circle in a stable Notion color with a white initial.
+struct SenderAvatar: View {
+    let address: EmailAddress
+    var size: CGFloat = 28
+    @Environment(AppState.self) private var app
+    @State private var entry: SenderAvatars.Entry?
+    static let palette: [LabelColor] = [.blue, .green, .orange, .purple, .pink, .red, .brown, .yellow]
+
+    var body: some View {
+        Group {
+            if case .image(let image, let fullBleed) = entry {
+                let picture = Image(decorative: image, scale: 1).resizable().interpolation(.high)
+                if fullBleed {
+                    picture.scaledToFill()
+                } else {
+                    picture.scaledToFit().padding(size * 0.18).background(.white)
+                }
+            } else {
+                Self.palette[SenderAvatars.colorIndex(address.email, count: Self.palette.count)].dot
+                    .overlay {
+                        Text(SenderAvatars.initial(address.displayName))
+                            .font(TextStyle.avatarInitial(size: size).font)
+                            .foregroundStyle(.white)
+                    }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay { if case .image = entry { Circle().strokeBorder(Theme.border, lineWidth: 0.5) } }
+        .accessibilityHidden(true)
+        .task(id: address.email) {
+            entry = app.avatars.cached(address.email)
+            if entry == nil { entry = await app.avatars.resolve(address.email) }
+        }
+    }
+}
+
+/// Up to two attachment chips and "+N" under a row's subject; a click opens the file in its default app.
+struct AttachmentChips: View {
+    let files: [Attachment]
+    @Environment(AppState.self) private var app
+    @State private var opening: String?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(files.prefix(2)) { file in
+                Button { open(file) } label: {
+                    HStack(spacing: 6) {
+                        if opening == file.id {
+                            DotsLoader().frame(width: 14)
+                        } else {
+                            Image(systemName: file.kind.symbol).font(.system(size: 11)).foregroundStyle(LabelColor(named: file.kind.colorName).dot)
+                                .frame(width: 14)
+                        }
+                        Text(file.filename.isEmpty ? "Untitled" : file.filename)
+                            .textStyle(.listSecondary).foregroundStyle(Theme.textPrimary).lineLimit(1).truncationMode(.middle)
+                            .frame(maxWidth: 150, alignment: .leading)
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .hoverFill(radius: 6)
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+                    .contentShape(Rectangle())
+                    .fixedSize()
+                }
+                .buttonStyle(.plain)
+                .help("Open \(file.filename)")
+            }
+            if files.count > 2 {
+                Text("+\(files.count - 2)").textStyle(.listSecondary).foregroundStyle(Theme.textTertiary)
+            }
+        }
+    }
+
+    private func open(_ file: Attachment) {
+        guard opening == nil else { return }
+        opening = file.id
+        Task {
+            defer { opening = nil }
+            do { NSWorkspace.shared.open(try await Attachment.file(id: file.id, store: app.store, gmail: app.gmail)) } catch {
+                app.show(Toast("Couldn't open \(file.filename): \(error.localizedDescription)"))
+            }
+        }
+    }
+}
+
+/// Gmail's "Copy code: 143819" pill.
+struct CodeChip: View {
+    let code: String
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(code, forType: .string)
+            app.show(Toast("Copied \(code)"))
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "doc.on.doc").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.iconSecondary)
+                (Text("Copy code: ").foregroundStyle(Theme.textSecondary) + Text(code).fontWeight(.semibold).foregroundStyle(Theme.textPrimary))
+                    .textStyle(.listSecondary).monospacedDigit()
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(LabelColor.lightGray.fill, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Copy \(code)")
     }
 }
 

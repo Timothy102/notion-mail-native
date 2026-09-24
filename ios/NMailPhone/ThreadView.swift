@@ -192,7 +192,7 @@ private struct CollapsedCard: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Avatar(name: message.sender.displayName, size: 28)
+            SenderAvatar(address: message.sender, size: 28)
             VStack(alignment: .leading, spacing: 1) {
                 HStack {
                     Text(message.sender.displayName).font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary).lineLimit(1)
@@ -233,7 +233,7 @@ private struct MessageCard: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
-            Avatar(name: message.sender.displayName, size: 36)
+            SenderAvatar(address: message.sender, size: 36)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(message.sender.displayName).font(.body.weight(.semibold)).foregroundStyle(Theme.textPrimary).lineLimit(1)
@@ -332,20 +332,9 @@ private struct AttachmentList: View {
     private func open(_ a: Attachment) {
         guard opening == nil else { return }
         opening = a.id
-        let gmail = app.gmail
         Task {
             defer { opening = nil }
-            do {
-                let data: Data
-                if let d = a.data { data = d }
-                else if let gmail, let remoteId = a.gmailAttachmentId { data = try await gmail.attachment(messageId: a.messageId, id: remoteId) }
-                else { throw CocoaError(.fileReadNoSuchFile) }
-                let dir = FileManager.default.temporaryDirectory.appending(path: "Attachments/\(a.messageId)", directoryHint: .isDirectory)
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                let url = dir.appending(path: (a.filename.isEmpty ? "attachment" : a.filename).replacingOccurrences(of: "/", with: "-"))
-                try data.write(to: url, options: .atomic)
-                shared = url
-            } catch {
+            do { shared = try await Attachment.file(id: a.id, store: app.store, gmail: app.gmail) } catch {
                 app.show(Toast("Couldn't open \(a.filename): \(error.localizedDescription)"))
             }
         }

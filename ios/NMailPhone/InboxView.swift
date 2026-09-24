@@ -8,6 +8,7 @@ struct InboxView: View {
     @Binding var sheet: MainSheet?
     let open: (MailThread) -> Void
     @State private var threads = Live<[MailThread]>([])
+    @State private var extras = Live<[String: ThreadRowExtras]>([:])
     @State private var labels = Live<[MailLabel]>([])
     @State private var counts = Live<[String: Int]>([:])
     @State private var limit = Self.page
@@ -69,11 +70,9 @@ struct InboxView: View {
             ForEach(groups, id: \.id) { group in
                 Section {
                     ForEach(group.threads) { thread in
-                        Button { open(thread) } label: {
-                            ThreadRow(thread: thread, labels: byId, revealed: Launch.screen == "swipe" && thread.id == threads.value.first?.id)
-                        }
+                        ThreadRow(thread: thread, extras: extras.value[thread.id], labels: byId,
+                                  revealed: Launch.screen == "swipe" && thread.id == threads.value.first?.id) { open(thread) }
                         .threadRowStyle()
-                        .listRowSeparator(thread.id == threads.value.first?.id ? .hidden : .automatic, edges: .top)
                         .threadActions(thread, app: app)
                         .onAppear { if thread.id == threads.value.last?.id, threads.value.count >= limit { limit += Self.page } }
                     }
@@ -165,6 +164,7 @@ struct InboxView: View {
     private func observeThreads() {
         let box = app.mailbox, limit = limit
         threads.observe(app.store) { try Store.threads($0, in: box, limit: limit) }
+        extras.observe(app.store) { try Store.rowExtras($0, threadIds: Store.threads($0, in: box, limit: limit).map(\.id)) }
     }
 
     private struct DayGroup {
@@ -221,14 +221,21 @@ struct ComposeButton: View {
     }
 }
 
-/// Avatar, sender, time, subject, one line of snippet and label chips, like Notion Mail on iPhone.
+/// Avatar, sender and time, subject, snippet with a label chip and the star, then attachment / code chips:
+/// Gmail's density and affordances in Notion's palette. Rows are 76 pt with three lines.
 struct ThreadRow: View {
     let thread: MailThread
+    var extras: ThreadRowExtras?
     let labels: [String: MailLabel]
     var terms: [String] = []
     var excerpt: String?
     /// Demo screenshot of a half-swiped row.
     var revealed = false
+    let open: () -> Void
+    @Environment(AppState.self) private var app
+
+    static let avatarSize: CGFloat = 40
+    static let textInset: CGFloat = avatarSize + 12
 
     var body: some View {
         if revealed {
@@ -248,9 +255,16 @@ struct ThreadRow: View {
     private var content: some View {
         let unread = thread.isUnread
         let chips = thread.userLabelIds.compactMap { labels[$0] }
+        let files = extras?.files ?? []
+        let code = extras?.code
         return HStack(alignment: .top, spacing: 12) {
-            Avatar(name: firstSender, size: 36)
-            VStack(alignment: .leading, spacing: 3) {
+            SenderAvatar(address: sender, size: Self.avatarSize)
+                .overlay(alignment: .leading) {
+                    if unread {
+                        Circle().fill(Theme.accent).frame(width: 8, height: 8).offset(x: -12).accessibilityLabel("Unread")
+                    }
+                }
+            VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(thread.participants.isEmpty ? "(no sender)" : thread.participants)
                         .font(.body.weight(unread ? .semibold : .regular))
@@ -262,20 +276,10 @@ struct ThreadRow: View {
                     if thread.hasDraft {
                         Text("Draft").font(.footnote).foregroundStyle(Theme.textRed)
                     }
-                    if unread {
-                        Circle().fill(Theme.accent).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[.bottom] + 1 }
-                            .accessibilityLabel("Unread")
-                    }
                     Spacer(minLength: 8)
-                    if thread.isStarred {
-                        Image(systemName: "star.fill").font(.caption).foregroundStyle(Theme.swipeStar).accessibilityLabel("Starred")
-                    }
-                    if thread.hasAttachments {
-                        Image(systemName: "paperclip").font(.caption).foregroundStyle(Theme.iconSecondary).accessibilityLabel("Attachment")
-                    }
                     Text(MailDate.list(thread.lastDate))
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.textTertiary)
+                        .font(.footnote.weight(unread ? .semibold : .regular))
+                        .foregroundStyle(unread ? Theme.textPrimary : Theme.textTertiary)
                         .monospacedDigit()
                         .lineLimit(1)
                         .layoutPriority(1)
@@ -284,23 +288,57 @@ struct ThreadRow: View {
                     .font(.subheadline.weight(unread ? .semibold : .regular))
                     .foregroundStyle(unread ? Theme.textPrimary : Theme.textPrimary.opacity(0.85))
                     .lineLimit(1)
-                marked(excerpt ?? thread.snippet)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(excerpt == nil ? 1 : 2)
-                if !chips.isEmpty {
-                    HStack(spacing: 4) {
-                        ForEach(chips.prefix(3)) { LabelChip(label: $0) }
-                        if chips.count > 3 {
-                            Text("+\(chips.count - 3)").font(.footnote).foregroundStyle(Theme.textTertiary)
+                HStack(alignment: .center, spacing: 8) {
+                    marked(excerpt ?? thread.snippet.listPreview)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(excerpt == nil ? 1 : 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let first = chips.first {
+                        HStack(spacing: 3) {
+                            LabelChip(label: first).frame(maxWidth: 96, alignment: .trailing)
+                            if chips.count > 1 {
+                                Text("+\(chips.count - 1)").font(.footnote).foregroundStyle(Theme.textTertiary)
+                            }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.top, 5)
+                    star
+                }
+                if !files.isEmpty || code != nil {
+                    HStack(spacing: 6) {
+                        if let code { CodeChip(code: code) }
+                        if !files.isEmpty { AttachmentChips(files: files) }
+                    }
+                    .padding(.top, 7)
+                    .padding(.bottom, 2)
                 }
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
+        .overlay(alignment: .bottom) { Hairline(color: Theme.border).padding(.leading, Self.textInset) }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Open", open)
+    }
+
+    private var star: some View {
+        Button { app.actions.setStarred([thread.id], !thread.isStarred) } label: {
+            Image(systemName: thread.isStarred ? "star.fill" : "star")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(thread.isStarred ? Theme.swipeStar : Theme.iconSecondary.opacity(0.7))
+                .frame(width: 24, height: 20)
+                .contentShape(Rectangle().inset(by: -10))
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(thread.isStarred ? "Unstar" : "Star")
+    }
+
+    /// The newest sender, or a stand-in keyed by the name until the extras load.
+    private var sender: EmailAddress {
+        extras?.sender ?? EmailAddress(name: firstSender, email: firstSender.lowercased())
     }
 
     private var firstSender: String {
@@ -344,11 +382,11 @@ private struct SwipeTile: View {
 }
 
 extension View {
+    /// The row draws its own hairline (one device pixel, from the text column), so List's separators are off.
     func threadRowStyle() -> some View {
         listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
             .listRowBackground(Theme.page)
-            .listRowSeparatorTint(Theme.border)
-            .alignmentGuide(.listRowSeparatorLeading) { _ in 48 }
+            .listRowSeparator(.hidden)
     }
 
     /// Swipes (read / star from the leading edge; archive, trash, remind from the trailing edge) and a long-press menu.
@@ -440,6 +478,7 @@ struct SearchResults: View {
     @Environment(AppState.self) private var app
     @State private var local = Live<[SearchHit]>([])
     @State private var remote = Live<[MailThread]>([])
+    @State private var extras = Live<[String: ThreadRowExtras]>([:])
     @State private var gmail = GmailState.idle
 
     private enum GmailState: Equatable { case idle, searching, done, failed }
@@ -464,9 +503,8 @@ struct SearchResults: View {
                 List {
                     source.listRowSeparator(.hidden).listRowBackground(Theme.page)
                     ForEach(hits) { hit in
-                        Button { open(hit.thread) } label: {
-                            ThreadRow(thread: hit.thread, labels: labels, terms: parsed.highlightTerms, excerpt: hit.excerpt)
-                        }
+                        ThreadRow(thread: hit.thread, extras: extras.value[hit.thread.id], labels: labels,
+                                  terms: parsed.highlightTerms, excerpt: hit.excerpt) { open(hit.thread) }
                         .threadRowStyle()
                         .threadActions(hit.thread, app: app)
                     }
@@ -477,6 +515,9 @@ struct SearchResults: View {
             }
         }
         .onChange(of: query, initial: true) { observeLocal() }
+        .onChange(of: hits.map(\.thread.id), initial: true) { _, ids in
+            extras.observe(app.store) { try Store.rowExtras($0, threadIds: ids) }
+        }
         .task(id: query) {
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
