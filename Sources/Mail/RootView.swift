@@ -153,7 +153,7 @@ struct SignInView: View {
                 appIcon
                     .frame(width: 112, height: 112)
                     .padding(.bottom, 20)
-                Text("Welcome to NMail").textStyle(.threadTitle)
+                Text("Welcome to AxiosM").textStyle(.threadTitle)
                     .padding(.bottom, 8)
                 Text("Your Gmail in a calm, keyboard-first inbox.")
                     .textStyle(.body).foregroundStyle(Theme.textSecondary)

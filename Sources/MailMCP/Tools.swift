@@ -12,7 +12,7 @@ struct Tool {
 
     var listing: JSON {
         var props = properties
-        props["account"] = ["type": "string", "description": "Account email. Defaults to the account open in NMail; see list_accounts."]
+        props["account"] = ["type": "string", "description": "Account email. Defaults to the account open in AxiosM; see list_accounts."]
         return [
             "name": .string(name),
             "title": .string(title),
@@ -55,12 +55,12 @@ enum Tools {
         "reply_all": ["type": "boolean", "default": false, "description": "With reply_to_message_id: reply to everyone."],
         "forward_message_id": ["type": "string", "description": "Forward this message id (with its attachments). Needs `to`."],
         "send_as": ["type": "string", "description": "Send-as alias email; defaults to Tim's default identity (replies: the address the original was sent to)."],
-        "sign": ["type": "boolean", "default": true, "description": "Append the NMail signature for the sending identity."],
+        "sign": ["type": "boolean", "default": true, "description": "Append the AxiosM signature for the sending identity."],
     ]
 
     static let all: [Tool] = [
         Tool(name: "list_accounts", title: "List accounts",
-             description: "NMail's accounts, which one is open in the app (the default for every tool), and whether each has a Gmail login.",
+             description: "AxiosM's accounts, which one is open in the app (the default for every tool), and whether each has a Gmail login.",
              properties: [:], readOnly: true),
         Tool(name: "list_labels", title: "List labels",
              description: "System and user labels with their ids and unread thread counts.",
@@ -86,7 +86,7 @@ enum Tools {
              properties: ["ids": ["type": "array", "items": ["type": "string"], "maxItems": 100], "include_quoted": includeQuoted],
              required: ["ids"], readOnly: true),
         Tool(name: "modify", title: "Modify mail",
-             description: "Apply one action to explicit thread or message ids (up to 1000), on Gmail and in NMail. Returns counts.",
+             description: "Apply one action to explicit thread or message ids (up to 1000), on Gmail and in AxiosM. Returns counts.",
              properties: ["ids": ["type": "array", "items": ["type": "string"], "maxItems": 1000], "target": target,
                           "action": action, "labels": labels],
              required: ["ids", "action"], destructive: true),
@@ -100,7 +100,7 @@ enum Tools {
                           "dry_run": ["type": "boolean", "default": true, "description": "true (default): only count and sample."]],
              required: ["action"], destructive: true),
         Tool(name: "create_draft", title: "Create draft",
-             description: "Save a Gmail draft built exactly like NMail's composer (signature, Notion-style HTML, reply threading and quote).",
+             description: "Save a Gmail draft built exactly like AxiosM's composer (signature, Notion-style HTML, reply threading and quote).",
              properties: compose),
         Tool(name: "update_draft", title: "Update draft",
              description: "Change a draft's recipients, subject or body. Omitted fields keep their current value; `body` replaces what was written (signature and quote are kept).",
@@ -111,7 +111,7 @@ enum Tools {
              description: "Drafts, newest first, with recipients, subject and snippet.",
              properties: ["limit": ["type": "integer", "minimum": 1, "maximum": 200, "default": 50]], readOnly: true),
         Tool(name: "delete_draft", title: "Delete draft",
-             description: "Delete a draft on Gmail and in NMail.",
+             description: "Delete a draft on Gmail and in AxiosM.",
              properties: ["draft_id": ["type": "string"]], required: ["draft_id"], destructive: true),
         Tool(name: "send", title: "Send mail",
              description: """
@@ -132,7 +132,7 @@ enum Tools {
              ],
              required: ["messages"], destructive: true),
         Tool(name: "get_signature", title: "Get signature",
-             description: "The signature NMail signs with for an identity, as HTML and text.",
+             description: "The signature AxiosM signs with for an identity, as HTML and text.",
              properties: ["send_as": ["type": "string", "description": "Identity email; defaults to the default identity."]], readOnly: true),
         Tool(name: "download_attachment", title: "Download attachment",
              description: "Save an attachment (ids from get_thread / get_messages) to a file.",
@@ -144,7 +144,7 @@ enum Tools {
              ],
              required: ["message_id", "attachment_id", "path"]),
         Tool(name: "sync", title: "Sync now",
-             description: "Pull the latest changes from Gmail (history, labels, drafts) into NMail's local copy now.",
+             description: "Pull the latest changes from Gmail (history, labels, drafts) into AxiosM's local copy now.",
              properties: [:]),
     ]
 }

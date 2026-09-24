@@ -12,7 +12,7 @@ struct MailApp: App {
     }
 
     var body: some Scene {
-        Window("Mail", id: "main") {
+        Window("AxiosM", id: "main") {
             RootView()
                 .environment(accounts)
                 .frame(minWidth: Theme.Metrics.windowMin.width, minHeight: Theme.Metrics.windowMin.height)

@@ -213,8 +213,8 @@ enum Loopback {
                     return
                 }
                 reply(conn, status: "200 OK", body: value != nil
-                      ? "Signed in to NMail. You can close this tab."
-                      : "Sign-in was cancelled (\(failure!)). You can close this tab and try again from NMail.") {
+                      ? "Signed in to AxiosM. You can close this tab."
+                      : "Sign-in was cancelled (\(failure!)). You can close this tab and try again from AxiosM.") {
                     listener.cancel()
                 }
                 if let value { codeCont.yield(value); codeCont.finish() } else { codeCont.finish(throwing: AuthError.badResponse("Google returned: \(failure!)")) }

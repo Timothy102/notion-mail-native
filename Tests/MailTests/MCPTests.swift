@@ -70,7 +70,7 @@ final class MCPTests: XCTestCase {
         XCTAssertEqual(initialized["jsonrpc"], "2.0")
         XCTAssertEqual(initialized["id"], 1)
         XCTAssertEqual(initialized["result"]?["protocolVersion"], "2025-06-18")
-        XCTAssertEqual(initialized["result"]?["serverInfo"]?["name"], "nmail")
+        XCTAssertEqual(initialized["result"]?["serverInfo"]?["name"], "axiosm")
         XCTAssertNotNil(initialized["result"]?["capabilities"]?["tools"])
         let older = try await rpc(s, "initialize", ["protocolVersion": "2025-03-26"])
         XCTAssertEqual(older["result"]?["protocolVersion"], "2025-03-26")
@@ -105,7 +105,7 @@ final class MCPTests: XCTestCase {
 
         let failed = try await rpc(s, "tools/call", ["name": "get_thread", "arguments": ["thread_id": "nope", "account": "who@else.com"]])
         XCTAssertEqual(failed["result"]?["isError"], true, "tool failures are results the model can read")
-        XCTAssertTrue(failed["result"]?["content"]?.array?.first?["text"]?.string?.contains("isn't an NMail account") ?? false)
+        XCTAssertTrue(failed["result"]?["content"]?.array?.first?["text"]?.string?.contains("isn't an AxiosM account") ?? false)
     }
 
     func testStoreOpensInWALWithBusyTimeout() throws {

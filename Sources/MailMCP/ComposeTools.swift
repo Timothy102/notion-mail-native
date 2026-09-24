@@ -340,7 +340,7 @@ extension MCPServer {
         let start = Date.now
         let resumed = try await sync.incremental()
         try await sync.syncLabelsAndDrafts()
-        return SyncResult(history: resumed ? "applied" : "none yet: open NMail once for its first full sync",
+        return SyncResult(history: resumed ? "applied" : "none yet: open AxiosM once for its first full sync",
                           milliseconds: Int(Date.now.timeIntervalSince(start) * 1000))
     }
 }

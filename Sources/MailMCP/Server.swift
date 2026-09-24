@@ -60,7 +60,7 @@ public actor MCPServer {
         return MCPServer(storage: storage) { email in
             if offline { return nil }
             let key = Auth.tokenKey(email)
-            let missing = ToolError("\(email) has no Gmail login. Open NMail and add the account (account menu → Add account), then try again.")
+            let missing = ToolError("\(email) has no Gmail login. Open AxiosM and add the account (account menu → Add account), then try again.")
             guard Secrets.get(key) != nil else { throw missing }
             let auth = Auth(email: email)
             return GmailClient { refresh in
@@ -90,7 +90,7 @@ public actor MCPServer {
             return Self.result(id: id, [
                 "protocolVersion": .string(Self.olderVersions.contains(asked) ? asked : Self.protocolVersion),
                 "capabilities": ["tools": ["listChanged": false]],
-                "serverInfo": ["name": "nmail", "title": "NMail", "version": "0.1.0"],
+                "serverInfo": ["name": "axiosm", "title": "AxiosM", "version": "0.1.0"],
                 "instructions": .string(Self.instructions),
             ])
         case "ping":
@@ -140,10 +140,10 @@ public actor MCPServer {
     func context(_ args: JSON) throws -> Context {
         let registry = storage.loadRegistry()
         guard let asked = args["account"]?.string ?? registry.active ?? registry.emails.first else {
-            throw ToolError("NMail has no accounts yet. Sign in to NMail first.")
+            throw ToolError("AxiosM has no accounts yet. Sign in to AxiosM first.")
         }
         guard let email = registry.emails.first(where: { $0.caseInsensitiveCompare(asked) == .orderedSame }) else {
-            throw ToolError("\(asked) isn't an NMail account. Accounts: \(registry.emails.joined(separator: ", ")). Add it in NMail first.")
+            throw ToolError("\(asked) isn't an AxiosM account. Accounts: \(registry.emails.joined(separator: ", ")). Add it in AxiosM first.")
         }
         if let cached = contexts[email] { return cached }
         let context = Context(email: email, store: try Store(path: storage.database(email)), gmail: try makeGmail(email))
@@ -164,7 +164,7 @@ public actor MCPServer {
         let sync = Sync(gmail: gmail, store: ctx.store)
         do {
             let resumed = try await withTimeout(syncTimeout) { try await sync.incremental() }
-            return resumed ? nil : "No sync history yet; open NMail once so it can do the first full sync."
+            return resumed ? nil : "No sync history yet; open AxiosM once so it can do the first full sync."
         } catch {
             log("sync failed: \(error)")
             return "Couldn't sync with Gmail (\(error.localizedDescription)); showing local mail."

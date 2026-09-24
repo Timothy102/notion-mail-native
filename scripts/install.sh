@@ -1,11 +1,11 @@
 #!/bin/sh
-# Builds a release NMail.app (with the nmail-mcp server inside) and installs it into /Applications.
+# Builds a release AxiosM.app (with the nmail-mcp server inside) and installs it into /Applications.
 set -e
 cd "$(dirname "$0")/.."
 swift build -c release --product Mail
 swift build -c release --product nmail-mcp
 bin="$(swift build -c release --product Mail --show-bin-path)"
-app="$bin/NMail.app"
+app="$bin/AxiosM.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/Mail" "$app/Contents/MacOS/Mail"
@@ -16,8 +16,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>NMail</string>
-  <key>CFBundleDisplayName</key><string>NMail</string>
+  <key>CFBundleName</key><string>AxiosM</string>
+  <key>CFBundleDisplayName</key><string>AxiosM</string>
   <key>CFBundleIdentifier</key><string>dev.tim.nmail</string>
   <key>CFBundleExecutable</key><string>Mail</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -30,6 +30,6 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 codesign --force --deep --sign - "$app"
-rm -rf /Applications/NMail.app
-cp -R "$app" /Applications/NMail.app
-echo "Installed /Applications/NMail.app"
+rm -rf /Applications/AxiosM.app /Applications/NMail.app
+cp -R "$app" /Applications/AxiosM.app
+echo "Installed /Applications/AxiosM.app"
