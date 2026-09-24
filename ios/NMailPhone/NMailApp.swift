@@ -69,7 +69,7 @@ struct SignInView: View {
             Spacer()
             Image("Logo").resizable().interpolation(.high).frame(width: 112, height: 112).padding(.bottom, 20)
                 .accessibilityHidden(true)
-            Text("Welcome to NMail").font(.title2.weight(.semibold)).foregroundStyle(Theme.textPrimary).padding(.bottom, 8)
+            Text("Welcome to AxiosM").font(.title2.weight(.semibold)).foregroundStyle(Theme.textPrimary).padding(.bottom, 8)
             Text("Your Gmail in a calm, focused inbox.").font(.body).foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center).padding(.bottom, 36)
             GoogleButton(busy: busy, action: signIn).padding(.horizontal, 32)

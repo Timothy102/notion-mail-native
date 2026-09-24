@@ -254,7 +254,7 @@ struct SettingsView: View {
 
     private var version: String {
         let info = Bundle.main.infoDictionary
-        return "NMail \(info?["CFBundleShortVersionString"] as? String ?? "") (\(info?["CFBundleVersion"] as? String ?? ""))"
+        return "AxiosM \(info?["CFBundleShortVersionString"] as? String ?? "") (\(info?["CFBundleVersion"] as? String ?? ""))"
     }
 }
 
@@ -292,7 +292,7 @@ struct SignatureSettings: View {
                     .autocorrectionDisabled()
                     .listRowBackground(Theme.card)
             } header: { Text("HTML") } footer: {
-                Text(status ?? "NMail signs new messages with this signature. Your Gmail signature only changes when you choose Save to Gmail.")
+                Text(status ?? "AxiosM signs new messages with this signature. Your Gmail signature only changes when you choose Save to Gmail.")
             }
             Section {
                 Button("Save on This iPhone", action: save).disabled(trimmed == original)

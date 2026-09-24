@@ -26,7 +26,7 @@ targets:
     info:
       path: NMailPhone/Info.plist
       properties:
-        CFBundleDisplayName: NMail
+        CFBundleDisplayName: AxiosM
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # The iOS OAuth client from Google Cloud; Auth derives the redirect scheme by reversing it.
