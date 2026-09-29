@@ -105,6 +105,16 @@ extension MCPServer {
         if !text.isEmpty { d.insert(text) }
     }
 
+    /// Everyone the message goes to, for the approval dialog. Recipients come first so truncation never hides one.
+    static func summary(_ p: Preview) -> String {
+        var lines = ["From: \(p.from)", "To: \(p.to.joined(separator: ", "))"]
+        if let cc = p.cc { lines.append("Cc: \(cc.joined(separator: ", "))") }
+        if let bcc = p.bcc { lines.append("Bcc: \(bcc.joined(separator: ", "))") }
+        lines.append("Subject: \(p.subject)")
+        if let files = p.attachments { lines.append("Attachments: \(files.joined(separator: ", "))") }
+        return lines.joined(separator: "\n")
+    }
+
     private static func validateForSending(_ d: ComposeDraft) throws {
         guard !d.recipients.isEmpty else { throw ToolError("Add at least one recipient (to, cc or bcc).") }
         if d.mode == .new, d.subject.trimmingCharacters(in: .whitespaces).isEmpty { throw ToolError("A new message needs a subject.") }
@@ -128,7 +138,10 @@ extension MCPServer {
         guard args["confirm"]?.bool == true else {
             return SendResult(sent: false, preview: Preview(d), note: "Preview only, nothing sent. Call again with confirm:true to send.")
         }
-        let sent = try await Outbox.sendNow(d, store: ctx.store, gmail: try ctx.requireGmail())
+        let gmail = try ctx.requireGmail()
+        let preview = Preview(d, html: false)
+        try await confirmOnScreen("Send this email?\n\n\(Self.summary(preview))\n\n\(preview.text.prefix(700))")
+        let sent = try await Outbox.sendNow(d, store: ctx.store, gmail: gmail)
         return SendResult(sent: true, id: sent.id, threadId: sent.threadId)
     }
 
@@ -155,25 +168,36 @@ extension MCPServer {
         let items = args["messages"]?.array ?? []
         guard !items.isEmpty, items.count <= 50 else { throw ToolError("Pass 1 to 50 messages.") }
         let confirm = args["confirm"]?.bool == true
-        let gmail = confirm ? try ctx.requireGmail() : nil
         var results: [BulkItem] = []
-        var sent = 0
+        var drafts: [(index: Int, draft: ComposeDraft)] = []
         for (i, item) in items.enumerated() {
             do {
                 let d = try await draft(ctx, item)
                 try Self.validateForSending(d)
-                guard let gmail else {
-                    results.append(BulkItem(index: i, ok: true, preview: Preview(d, html: false)))
-                    continue
-                }
-                if sent > 0 { try await Task.sleep(for: sendPacing) }
-                let message = try await Outbox.sendNow(d, store: ctx.store, gmail: gmail)
-                sent += 1
-                results.append(BulkItem(index: i, ok: true, id: message.id, threadId: message.threadId, to: d.to.map(\.email), subject: d.subject))
+                drafts.append((i, d))
             } catch {
                 results.append(BulkItem(index: i, ok: false, error: error.localizedDescription))
             }
         }
+        var sent = 0
+        if confirm, !drafts.isEmpty {
+            let gmail = try ctx.requireGmail()
+            let lines = drafts.map { "• \($0.draft.recipients.map(\.email).joined(separator: ", ").prefix(80)) — \($0.draft.subject.prefix(50))" }
+            try await confirmOnScreen("Send \(drafts.count) separate emails from \(ctx.email)?\n\n" + lines.joined(separator: "\n"))
+            for (i, d) in drafts {
+                do {
+                    if sent > 0 { try await Task.sleep(for: sendPacing) }
+                    let message = try await Outbox.sendNow(d, store: ctx.store, gmail: gmail)
+                    sent += 1
+                    results.append(BulkItem(index: i, ok: true, id: message.id, threadId: message.threadId, to: d.to.map(\.email), subject: d.subject))
+                } catch {
+                    results.append(BulkItem(index: i, ok: false, error: error.localizedDescription))
+                }
+            }
+        } else {
+            results += drafts.map { BulkItem(index: $0.index, ok: true, preview: Preview($0.draft, html: false)) }
+        }
+        results.sort { $0.index < $1.index }
         return BulkResult(sent: sent, failed: results.filter { !$0.ok }.count, confirm: confirm, results: results)
     }
 
@@ -266,7 +290,12 @@ extension MCPServer {
     func deleteDraft(_ args: JSON) async throws -> [String: String] {
         let ctx = try context(args)
         guard let id = args["draft_id"]?.string else { throw ToolError("draft_id is required.") }
-        try await ctx.requireGmail().deleteDraft(id)
+        let gmail = try ctx.requireGmail()
+        let summary = try await ctx.store.db.read { db in
+            try Draft.fetchOne(db, key: id).flatMap { try Message.fetchOne(db, key: $0.messageId) }.map { "To: \($0.to)\nSubject: \($0.subject)" }
+        }
+        try await confirmOnScreen("Delete this draft in \(ctx.email)? It can't be undone.\n\n\(summary ?? "Draft \(id)")")
+        try await gmail.deleteDraft(id)
         try ctx.store.deleteDraft(id: id)
         return ["deleted": id]
     }
@@ -305,21 +334,16 @@ extension MCPServer {
 
     func downloadAttachment(_ args: JSON) async throws -> DownloadResult {
         let ctx = try context(args)
-        guard let messageId = args["message_id"]?.string, let key = args["attachment_id"]?.string, let path = args["path"]?.string else {
-            throw ToolError("message_id, attachment_id and path are required.")
+        guard let messageId = args["message_id"]?.string, let key = args["attachment_id"]?.string else {
+            throw ToolError("message_id and attachment_id are required.")
         }
+        let path = args["path"]?.string
         try await ingestMissing(ctx, [messageId])
         let attachments = try await ctx.store.db.read { try Attachment.filter(Column("messageId") == messageId).fetchAll($0) }
         guard let a = attachments.first(where: { $0.id == key || $0.partId == key || $0.filename == key }) else {
             throw ToolError("No attachment \(key) on \(messageId). Attachments: \(attachments.map { "\($0.id) (\($0.filename))" }.joined(separator: ", ")).")
         }
-        let expanded = (path as NSString).expandingTildeInPath
-        guard expanded.hasPrefix("/") else { throw ToolError("path must be absolute.") }
-        var url = URL(filePath: expanded)
-        var isDirectory: ObjCBool = false
-        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-            url.append(path: a.filename.replacingOccurrences(of: "/", with: "_"))
-        }
+        let url = try Self.downloadTarget(path, filename: a.filename, root: .downloadsDirectory)
         if FileManager.default.fileExists(atPath: url.path), args["overwrite"]?.bool != true {
             throw ToolError("\(url.path) exists; pass overwrite:true to replace it.")
         }
@@ -327,9 +351,38 @@ extension MCPServer {
         if let local = a.data { data = local }
         else if let remote = a.gmailAttachmentId { data = try await ctx.requireGmail().attachment(messageId: messageId, id: remote) }
         else { throw ToolError("\(a.filename) has no content to save.") }
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
+        Self.quarantine(url)
         return DownloadResult(path: url.path, filename: a.filename, mimeType: a.mimeType, bytes: data.count)
+    }
+
+    /// Where an attachment may be saved: inside `root` (~/Downloads) only, after resolving `..` and symlinks, into a
+    /// directory that already exists. Otherwise a malicious email could talk Claude into writing ~/.zshrc or a LaunchAgent.
+    static func downloadTarget(_ path: String?, filename: String, root: URL) throws -> URL {
+        let root = root.resolvingSymlinksInPath()
+        let expanded = ((path ?? "") as NSString).expandingTildeInPath
+        var url = (expanded.hasPrefix("/") ? URL(filePath: expanded) : root.appending(path: expanded)).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            let name = filename.replacing(/[\/:\x00]/, with: "_")
+            url.append(path: [".", ".."].contains(name) || name.isEmpty ? "attachment" : name)
+        }
+        let parent = url.deletingLastPathComponent().resolvingSymlinksInPath()
+        guard parent.path == root.path || parent.path.hasPrefix(root.path + "/") else {
+            throw ToolError("Attachments can only be saved inside \(root.path).")
+        }
+        guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw ToolError("\(parent.path) doesn't exist; save into an existing folder under \(root.path).")
+        }
+        return parent.appending(path: url.lastPathComponent)
+    }
+
+    /// Marks a saved attachment as downloaded from the internet, so Gatekeeper checks it before it can run.
+    static func quarantine(_ url: URL) {
+        let value = String(format: "0081;%08x;AxiosM;", Int(Date.now.timeIntervalSince1970))
+        _ = url.withUnsafeFileSystemRepresentation { path in
+            path.map { setxattr($0, "com.apple.quarantine", value, value.utf8.count, 0, 0) }
+        }
     }
 
     struct SyncResult: Encodable { var history: String; var milliseconds: Int }

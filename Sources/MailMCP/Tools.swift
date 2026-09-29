@@ -86,7 +86,7 @@ enum Tools {
              properties: ["ids": ["type": "array", "items": ["type": "string"], "maxItems": 100], "include_quoted": includeQuoted],
              required: ["ids"], readOnly: true),
         Tool(name: "modify", title: "Modify mail",
-             description: "Apply one action to explicit thread or message ids (up to 1000), on Gmail and in AxiosM. Returns counts.",
+             description: "Apply one action to explicit thread or message ids (up to 1000), on Gmail and in AxiosM. Trash and spam need Tim's OK in an on-screen dialog. Returns counts.",
              properties: ["ids": ["type": "array", "items": ["type": "string"], "maxItems": 1000], "target": target,
                           "action": action, "labels": labels],
              required: ["ids", "action"], destructive: true),
@@ -94,7 +94,7 @@ enum Tools {
              description: """
                 Apply one action to everything matching a Gmail query (matched on Gmail, all time). DRY RUN BY DEFAULT: \
                 returns the match count and 10 samples and changes nothing. Pass dry_run:false to act; at most 5000 \
-                matching messages per call (call again for the rest).
+                matching messages per call (call again for the rest). Trash and spam need Tim's OK in an on-screen dialog.
                 """,
              properties: ["query": query, "mailbox": mailbox, "target": target, "action": action, "labels": labels,
                           "dry_run": ["type": "boolean", "default": true, "description": "true (default): only count and sample."]],
@@ -111,20 +111,22 @@ enum Tools {
              description: "Drafts, newest first, with recipients, subject and snippet.",
              properties: ["limit": ["type": "integer", "minimum": 1, "maximum": 200, "default": 50]], readOnly: true),
         Tool(name: "delete_draft", title: "Delete draft",
-             description: "Delete a draft on Gmail and in AxiosM.",
+             description: "Delete a draft on Gmail and in AxiosM, after Tim allows it in an on-screen dialog.",
              properties: ["draft_id": ["type": "string"]], required: ["draft_id"], destructive: true),
         Tool(name: "send", title: "Send mail",
              description: """
                 Send a new message, reply, reply-all or forward, built exactly like NMail's composer (signature, Notion-style \
                 HTML, Gmail threading and quote). PREVIEW BY DEFAULT: without confirm:true it returns from, to, cc, subject, \
-                the text with the signature and whether it threads, and sends nothing. Show Tim the preview first.
+                the text with the signature and whether it threads, and sends nothing. Show Tim the preview first. \
+                With confirm:true Tim still has to click Allow in an on-screen AxiosM dialog.
                 """,
              properties: compose.merging(["confirm": ["type": "boolean", "default": false, "description": "true sends. false (default) only previews."]]) { a, _ in a },
              destructive: true),
         Tool(name: "send_bulk", title: "Send many",
              description: """
                 Send up to 50 individual messages (each with the same fields as `send`), about one per second. Previews all \
-                of them unless confirm:true. Returns a result per message; one failure doesn't stop the rest.
+                of them unless confirm:true, which asks Tim once in an on-screen dialog for the whole batch. Returns a result \
+                per message; one failure doesn't stop the rest.
                 """,
              properties: [
                  "messages": ["type": "array", "maxItems": 50, "items": ["type": "object", "properties": .object(compose)]],
@@ -135,14 +137,14 @@ enum Tools {
              description: "The signature AxiosM signs with for an identity, as HTML and text.",
              properties: ["send_as": ["type": "string", "description": "Identity email; defaults to the default identity."]], readOnly: true),
         Tool(name: "download_attachment", title: "Download attachment",
-             description: "Save an attachment (ids from get_thread / get_messages) to a file.",
+             description: "Save an attachment (ids from get_thread / get_messages) under ~/Downloads, quarantined like a browser download.",
              properties: [
                  "message_id": ["type": "string"],
                  "attachment_id": ["type": "string", "description": "The attachment's id, or its filename."],
-                 "path": ["type": "string", "description": "Absolute file path, or an existing directory to save into under the attachment's name."],
+                 "path": ["type": "string", "description": "File or existing folder inside ~/Downloads (absolute, or relative to ~/Downloads). Defaults to ~/Downloads under the attachment's name."],
                  "overwrite": ["type": "boolean", "default": false],
              ],
-             required: ["message_id", "attachment_id", "path"]),
+             required: ["message_id", "attachment_id"]),
         Tool(name: "sync", title: "Sync now",
              description: "Pull the latest changes from Gmail (history, labels, drafts) into AxiosM's local copy now.",
              properties: [:]),

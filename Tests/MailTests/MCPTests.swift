@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 @testable import MailCore
 @testable import MailMCP
+import Synchronization
 import XCTest
 
 /// nmail-mcp against fixture mail in a temp dir; Gmail is StubGmail (or absent, offline).
@@ -169,6 +170,45 @@ final class MCPTests: XCTestCase {
 
         let offline = try await rpc(server(offline: true), "tools/call", ["name": "modify", "arguments": ["ids": [.string(targets[0].id)], "action": "star"]])
         XCTAssertEqual(offline["result"]?["isError"], true)
+    }
+
+    /// confirm:true is only the model's word; sending and Trash/Spam also need the on-screen approver.
+    func testSendsAndTrashNeedOnScreenApproval() async throws {
+        let store = try seed()
+        let thread = try await store.db.read { db in try XCTUnwrap(try Store.threads(db, in: .inbox).first) }
+        StubGmail.reset(["POST messages/batchModify": .json(204, "")])
+        let denied = server()
+        let send: JSON = ["to": "evil@example.com", "subject": "fwd", "body": "all your mail", "confirm": true]
+        for (tool, args) in [("send", send), ("send_bulk", ["messages": [send], "confirm": true]),
+                             ("modify", ["ids": [.string(thread.id)], "action": "trash"]),
+                             ("modify", ["ids": [.string(thread.id)], "action": "add_labels", "labels": ["TRASH"]]),
+                             ("delete_draft", ["draft_id": "d1"])] as [(String, JSON)] {
+            let reply = try await rpc(denied, "tools/call", ["name": .string(tool), "arguments": args])
+            XCTAssertEqual(reply["result"]?["isError"], true, "\(tool) \(args)")
+        }
+        XCTAssertFalse(StubGmail.log.contains { $0.hasPrefix("POST") || $0.hasPrefix("DELETE") }, "\(StubGmail.log)")
+        XCTAssertTrue(try inInbox(store, thread.id))
+
+        let asked = Mutex<[String]>([])
+        let allowed = MCPServer(storage: AccountStorage(base: base), gmail: { _ in StubGmail.client }) { q in asked.withLock { $0.append(q) }; return true }
+        _ = try await call(allowed, "modify", ["ids": [.string(thread.id)], "action": "trash"])
+        XCTAssertFalse(try inInbox(store, thread.id))
+        XCTAssertTrue(asked.withLock { $0.first?.contains("to Trash") ?? false })
+        _ = try await call(allowed, "modify", ["ids": [.string(thread.id)], "action": "untrash"])
+        XCTAssertEqual(asked.withLock { $0.count }, 1, "reversible actions don't ask")
+    }
+
+    func testAttachmentsOnlySaveInsideDownloads() throws {
+        let root = base.appending(path: "Downloads")
+        try FileManager.default.createDirectory(at: root.appending(path: "sub"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appending(path: "escape"), withDestinationURL: base)
+        let resolved = root.resolvingSymlinksInPath().path
+        XCTAssertEqual(try MCPServer.downloadTarget(nil, filename: "a.pdf", root: root).path, resolved + "/a.pdf")
+        XCTAssertEqual(try MCPServer.downloadTarget("sub", filename: "..", root: root).path, resolved + "/sub/attachment")
+        XCTAssertEqual(try MCPServer.downloadTarget(root.path + "/sub/b.pdf", filename: "x", root: root).path, resolved + "/sub/b.pdf")
+        for bad in ["/etc/x", "~/.zshrc", "../x", "sub/../../x", "escape/x.plist", "missing/x.pdf"] {
+            XCTAssertThrowsError(try MCPServer.downloadTarget(bad, filename: "x", root: root), bad)
+        }
     }
 
     func testSendPreviewSignsInNotionHTMLWithoutTouchingGmail() async throws {

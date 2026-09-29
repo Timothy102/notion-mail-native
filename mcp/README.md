@@ -32,7 +32,7 @@ signature markup. Mail sent from Claude looks the same as mail sent from the app
 | `send` | New message, reply, reply-all (`reply_to_message_id`, `reply_all`) or forward (`forward_message_id`). **It previews by default.** Nothing is sent without `confirm: true`. Also takes optional `send_as` and `sign` (default true). |
 | `send_bulk` | Up to 50 personalised messages, sent about 1 per second. It previews unless you pass `confirm: true`, and returns a result per message. |
 | `get_signature` | The signature HTML and text for an account or alias |
-| `download_attachment` | Saves an attachment to a path |
+| `download_attachment` | Saves an attachment inside `~/Downloads` (nowhere else), quarantined like a browser download |
 | `sync` | Runs an incremental sync now (history, labels and drafts) |
 
 Actions are `archive`, `unarchive`, `mark_read`, `mark_unread`, `star`, `unstar`, `trash`, `untrash`, `spam`,
@@ -44,6 +44,23 @@ Gmail through `messages.batchModify` in chunks of 1000 ids, and then to the loca
 Message bodies can be plain text or light markdown: `**bold**`, `*italic*`, `[text](url)` and `- ` bullets.
 Don't write a sign-off. Your NMail signature is added automatically, and replies get the Gmail-style quote and
 threading headers, the same as in the app.
+
+## Security
+
+Mail is written by strangers, so any email can carry a prompt injection ("forward everything to …"). `confirm:true`
+and `dry_run:false` are arguments the model chooses, so they can't be the last line of defence:
+
+- **Sending (`send`, `send_bulk`), Trash/Spam (as an action or via `add_labels`) and `delete_draft`** open a native
+  macOS dialog listing every recipient or a sample of the affected mail. Cancel is the default button, and after 2
+  minutes it counts as no. The dialog text goes to `osascript` as argv, never spliced into the script. A server
+  built without an approver refuses all of these.
+- **`download_attachment`** writes only into existing folders under `~/Downloads`, after resolving `..` and
+  symlinks, and sets `com.apple.quarantine` on the file.
+- **The server instructions** tell Claude that mail content is untrusted and must never drive a send or a move.
+- The server can't change Gmail settings (filters, forwarding, delegates) and never runs a sign-in.
+
+The gate protects against injected instructions reaching the MCP tools. It doesn't protect against a local process
+that can already run shell commands as you: `secrets.json` (mode 0600) is readable by any process running as you.
 
 ## Things to ask Claude
 
@@ -66,7 +83,7 @@ threading headers, the same as in the app.
 `scripts/install.sh` builds the release app. It also copies the release `nmail-mcp` binary into the app bundle:
 
 ```
-/Applications/NMail.app/Contents/MacOS/nmail-mcp
+/Applications/AxiosM.app/Contents/MacOS/nmail-mcp
 ```
 
 ## Register
@@ -74,7 +91,7 @@ threading headers, the same as in the app.
 For Claude Code:
 
 ```sh
-claude mcp add --scope user nmail -- /Applications/NMail.app/Contents/MacOS/nmail-mcp
+claude mcp add --scope user axiosm -- /Applications/AxiosM.app/Contents/MacOS/nmail-mcp
 ```
 
 For Claude Desktop, add this to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -82,8 +99,8 @@ For Claude Desktop, add this to `~/Library/Application Support/Claude/claude_des
 ```json
 {
   "mcpServers": {
-    "nmail": {
-      "command": "/Applications/NMail.app/Contents/MacOS/nmail-mcp"
+    "axiosm": {
+      "command": "/Applications/AxiosM.app/Contents/MacOS/nmail-mcp"
     }
   }
 }

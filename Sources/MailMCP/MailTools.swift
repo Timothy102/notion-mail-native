@@ -385,7 +385,14 @@ extension MCPServer {
     }
 
     /// Gmail's batchModify in chunks of 1000, each mirrored into the store once Gmail accepted it.
+    /// Trash and Spam (by action or by `add_labels`) need Tim's on-screen OK first.
     private func apply(_ ctx: Context, _ gmail: GmailClient, _ messageIds: [String], add: Set<String>, remove: Set<String>) async throws {
+        if !messageIds.isEmpty, let bin = add.contains("SPAM") ? "Spam" : add.contains("TRASH") ? "Trash" : nil {
+            let samples = try await ctx.store.db.read { db in
+                try Message.fetchAll(db, keys: Array(messageIds.prefix(8))).map { "• \($0.from.prefix(40)) — \($0.subject.prefix(60))" }
+            }
+            try await confirmOnScreen("Move \(messageIds.count) message(s) in \(ctx.email) to \(bin)?\n\n" + samples.joined(separator: "\n"))
+        }
         for start in stride(from: 0, to: messageIds.count, by: 1000) {
             let chunk = Array(messageIds[start..<min(start + 1000, messageIds.count)])
             try await gmail.batchModify(messageIds: chunk, add: add.sorted(), remove: remove.sorted())
