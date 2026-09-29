@@ -185,4 +185,9 @@ final class SnapshotLauncher: NSObject, NSApplicationDelegate {
         window.orderFrontRegardless()
         self.window = window
     }
+
+    /// A single-`Window` SwiftUI app quits when that window closes; mail should keep running (and syncing) like Mail.app.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        Launch.snapshotPath != nil
+    }
 }
