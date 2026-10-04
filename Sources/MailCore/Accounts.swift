@@ -159,6 +159,13 @@ public final class AccountManager {
         try activate(email)
     }
 
+    /// Google sign-in again for the open account after its login was revoked, then syncs.
+    public func reauthenticate() async throws {
+        guard let email = registry.active, storage != nil else { return }
+        try await Auth(email: email).signIn()
+        app?.syncNow()
+    }
+
     /// Signs out of the open account only: stops its sync, deletes its login and mail, and opens the next account.
     public func signOut() async {
         guard let email = registry.active, let current = app else { return }

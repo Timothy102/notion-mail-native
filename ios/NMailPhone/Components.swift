@@ -316,6 +316,30 @@ struct ToastHost: View {
 }
 
 /// "Sign in with Google" per Google's branding: neutral fill, 1 pt outline, the four-colour G.
+/// Inbox banner when Google ended the login: mail stays readable, one tap signs in again.
+struct ReauthNotice: View {
+    @Environment(AccountManager.self) private var accounts
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Google signed you out. Sign in again to get new mail.", systemImage: "person.crop.circle.badge.exclamationmark")
+                .font(.footnote).foregroundStyle(Theme.textSecondary)
+            if let error { Text(error).font(.footnote).foregroundStyle(Theme.textRed).lineLimit(3) }
+            GoogleButton(busy: busy) {
+                busy = true
+                error = nil
+                Task {
+                    do { try await accounts.reauthenticate() } catch { self.error = SignInView.describe(error) }
+                    busy = false
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
 struct GoogleButton: View {
     var busy: Bool
     var action: () -> Void

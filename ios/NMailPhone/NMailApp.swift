@@ -1,21 +1,38 @@
+import BackgroundTasks
 import MailCore
 import SwiftUI
 
 @main
 struct NMailApp: App {
+    /// Listed under BGTaskSchedulerPermittedIdentifiers in project.yml.
+    nonisolated static let refreshTask = "com.timcvetko.nmail.refresh"
+
     @State private var accounts = AccountManager.launch()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView().environment(accounts)
         }
+        .onChange(of: scenePhase) { if scenePhase == .background { Self.scheduleRefresh() } }
+        .backgroundTask(.appRefresh(Self.refreshTask)) {
+            Self.scheduleRefresh()
+            await accounts.app?.refresh()
+        }
+    }
+
+    /// iOS decides when it runs (usage patterns, battery); 15 min is the earliest we ask for.
+    nonisolated static func scheduleRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: refreshTask)
+        request.earliestBeginDate = .now.addingTimeInterval(15 * 60)
+        try? BGTaskScheduler.shared.submit(request)
     }
 }
 
 /// Launch-time configuration from the environment (pass with `SIMCTL_CHILD_` when launching through simctl).
 ///
 /// - `MAIL_DEMO=1`: in-memory database seeded with MailCore's fixtures, no network.
-/// - `MAIL_SCREEN`: inbox | thread | html | compose | search | mailboxes | accounts | settings | signin | swipe | empty
+/// - `MAIL_SCREEN`: inbox | thread | html | compose | search | mailboxes | accounts | settings | signin | swipe | empty | signedout
 /// - `MAIL_THEME`: light | dark; `MAIL_QUERY`: the search preset's query.
 enum Launch {
     static let env = ProcessInfo.processInfo.environment
@@ -27,8 +44,8 @@ enum Launch {
 
 extension AccountManager {
     /// Demo mode signs in one fixture account; `signin` shows none and `accounts` all three.
-    /// ponytail: foreground sync only (launch, returning to the foreground, pull to refresh, every 30 s while open).
-    /// BGAppRefreshTask background sync is future work; it needs the BGTaskScheduler identifier in Info.plist.
+    /// Syncs on launch, returning to the foreground, pull to refresh, every 30 s while open, and in
+    /// iOS background app refresh. ponytail: no push; instant new-mail alerts need a Gmail watch → APNs server.
     static func launch() -> AccountManager {
         let manager = Launch.isDemo
             ? AccountManager(demo: Fixtures.accounts, signedIn: ["signin": 0, "accounts": Fixtures.accounts.count][Launch.screen] ?? 1)

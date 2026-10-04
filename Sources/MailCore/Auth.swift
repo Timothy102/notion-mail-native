@@ -41,7 +41,11 @@ struct OAuthClient: Decodable {
     #endif
 }
 
-public enum AuthError: Error { case noCode, badResponse(String) }
+public enum AuthError: Error {
+    case noCode, badResponse(String)
+    /// Google revoked the login (or there never was one): only an interactive sign-in fixes it.
+    case signedOut
+}
 
 /// One Google account's tokens. The refresh token lives in Secrets under `refresh_token.<email>`;
 /// the access token is cached here.
@@ -58,6 +62,8 @@ public actor Auth {
     public private(set) var email: String?
     private var accessToken: String?
     private var expiry = Date.distantPast
+    /// One refresh at a time: parallel Gmail calls that all hit an expired token share it.
+    private var refreshing: Task<String, Error>?
 
     public init(email: String?) {
         self.email = email
@@ -65,18 +71,21 @@ public actor Auth {
 
     public static func tokenKey(_ email: String) -> String { "refresh_token.\(email)" }
 
-    /// A valid access token; `refresh` skips the cached one (after a 401). Without a refresh token
-    /// (revoked, or never signed in) this runs the consent flow again.
+    /// A valid access token; `refresh` skips the cached one (after a 401). Throws `signedOut` without a
+    /// refresh token: background syncs never pop up Google's sign-in, the user starts it from a banner.
     public func token(refresh: Bool = false) async throws -> String {
         if !refresh, let accessToken, expiry > .now.addingTimeInterval(60) { return accessToken }
-        guard let email, let refresh = Secrets.get(Self.tokenKey(email)) else {
-            try await signIn()
-            return accessToken!
+        if let refreshing { return try await refreshing.value }
+        guard let email, let refreshToken = Secrets.get(Self.tokenKey(email)) else { throw AuthError.signedOut }
+        let task = Task {
+            let client = try OAuthClient.load()
+            return try await exchange(client.credentials.merging([
+                "refresh_token": refreshToken, "grant_type": "refresh_token",
+            ]) { $1 }).access
         }
-        let client = try OAuthClient.load()
-        return try await exchange(client.credentials.merging([
-            "refresh_token": refresh, "grant_type": "refresh_token",
-        ]) { $1 }).access
+        refreshing = task
+        defer { refreshing = nil }
+        return try await task.value
     }
 
     /// Google's consent flow, then Gmail's profile to learn which account signed in. Returns its email.
@@ -134,6 +143,13 @@ public actor Auth {
         return signedIn
     }
 
+    /// Only invalid_grant means the login is gone. 5xx, rate limits and captive-portal pages are
+    /// transient: the refresh token is kept and the next sync retries.
+    static func isRevoked(_ body: Data) -> Bool {
+        struct Failure: Decodable { let error: String }
+        return (try? JSONDecoder().decode(Failure.self, from: body))?.error == "invalid_grant"
+    }
+
     private func exchange(_ form: [String: String]) async throws -> (access: String, refresh: String?) {
         var req = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
         req.httpMethod = "POST"
@@ -141,8 +157,14 @@ public actor Auth {
         req.httpBody = form.map { "\($0)=\($1.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)" }
             .joined(separator: "&").data(using: .utf8)
         let (data, resp) = try await URLSession.shared.data(for: req)
-        guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-            if form["grant_type"] == "refresh_token", let email { Secrets.delete(Self.tokenKey(email)) }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            let revoked = Self.isRevoked(data)
+            SyncLog.write("token \(form["grant_type"] ?? "") http \(status)\(revoked ? " invalid_grant" : "")")
+            if revoked, form["grant_type"] == "refresh_token", let email {
+                Secrets.delete(Self.tokenKey(email))
+                throw AuthError.signedOut
+            }
             throw AuthError.badResponse(String(decoding: data, as: UTF8.self))
         }
         struct Token: Decodable { let access_token: String; let expires_in: Double; let refresh_token: String? }
@@ -251,9 +273,9 @@ enum Loopback {
 
 #endif
 
-/// Login tokens in a file only this user can read (0600, directory 0700), like gcloud and gh keep theirs.
-/// ponytail: not the Keychain, because NMail is ad-hoc signed and every rebuild loses its Keychain grant;
-/// move back to the Keychain if the app ever ships with a stable signing identity.
+/// Login tokens. iPhone: one Keychain item, this device only (never in backups), readable after the first
+/// unlock so background refresh works while locked. Mac: a file only this user can read (0600, directory 0700),
+/// like gcloud and gh keep theirs, because the ad-hoc signed Mac app loses its Keychain grant on every rebuild.
 public enum Secrets {
     private static let lock = NSLock()
     package nonisolated(unsafe) static var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -279,23 +301,50 @@ public enum Secrets {
         }
     }
 
-    private static func read() -> [String: String] {
+    private static func readFile() -> [String: String] {
         (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: url))) ?? [:]
     }
+
+    #if os(iOS)
+    private static var item: [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.timcvetko.nmail", kSecAttrAccount as String: "secrets"]
+    }
+
+    /// Builds that kept logins in secrets.json move them into the Keychain on first read, staying signed in.
+    private static func read() -> [String: String] {
+        var query = item
+        query[kSecReturnData as String] = true
+        var result: CFTypeRef?
+        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data {
+            return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+        }
+        let legacy = readFile()
+        if !legacy.isEmpty, (try? write(legacy)) != nil { try? FileManager.default.removeItem(at: url) }
+        return legacy
+    }
+
+    private static func write(_ all: [String: String]) throws {
+        let data = try JSONEncoder().encode(all)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        var status = SecItemUpdate(item as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound { status = SecItemAdd(item.merging(attributes) { $1 } as CFDictionary, nil) }
+        guard status == errSecSuccess else { throw AuthError.badResponse("Couldn't save the login to the Keychain (\(status)).") }
+    }
+    #else
+    private static func read() -> [String: String] { readFile() }
 
     private static func write(_ all: [String: String]) throws {
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let tmp = dir.appending(path: ".secrets.\(UUID().uuidString)")
-        var attributes: [FileAttributeKey: Any] = [.posixPermissions: 0o600]
-        #if os(iOS)
-        // Readable by a foreground sync after the first unlock, never before it.
-        attributes[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
-        #endif
-        guard FileManager.default.createFile(atPath: tmp.path, contents: try JSONEncoder().encode(all), attributes: attributes) else {
+        guard FileManager.default.createFile(atPath: tmp.path, contents: try JSONEncoder().encode(all), attributes: [.posixPermissions: 0o600]) else {
             throw AuthError.badResponse("Couldn't save the login to \(url.path).")
         }
         _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
     }
+    #endif
 }
 

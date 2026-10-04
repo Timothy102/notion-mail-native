@@ -55,6 +55,7 @@ struct InboxView: View {
             ScrollView { SkeletonRows(count: 9) }.scrollDisabled(true)
         } else if threads.value.isEmpty {
             ScrollView {
+                syncNotice.padding(.horizontal, 20)
                 EmptyState(title: "No mail here!", message: "Rest easy, no mail carriers in sight.")
             }
             .refreshable { await app.refresh() }
@@ -92,6 +93,9 @@ struct InboxView: View {
 
     @ViewBuilder
     private var syncNotice: some View {
+        if app.syncStatus == .signedOut {
+            ReauthNotice().listRowSeparator(.hidden).listRowBackground(Theme.page)
+        }
         let text: String? = switch app.syncStatus {
         case .offline: "You're offline. Changes will sync when you're back online."
         case .failed(let message): "Couldn't sync: \(message)"
@@ -147,7 +151,8 @@ struct InboxView: View {
         return app.mailbox.title
     }
 
-    private var isLoading: Bool { app.syncStatus.isBackfilling || app.isAwaitingFirstSync }
+    /// Offline, failed or signed out before the first sync: show the empty list and its notice, not a skeleton forever.
+    private var isLoading: Bool { app.syncStatus.isBackfilling || (app.isAwaitingFirstSync && [.idle, .syncing].contains(app.syncStatus)) }
 
     private func observeThreads() {
         let box = app.mailbox, limit = limit

@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 out="${1:-snapshots}"
 [ $# -gt 0 ] && shift
-screens="${*:-signin inbox rows toast empty thread thread-selected thread-long palette-thread search-loading html html-images html-wide attachments labels invite reply reply-quotes quotes quotes-expanded quotes-text quotes-text-expanded compose compose-draft palette search sidebar calendar account-menu account-menu-photo account-switcher settings settings-account settings-account-photo settings-signature settings-appearance settings-shortcuts integrations notion-save notion-link syncing loading loading-empty loading-indeterminate synced offline syncfailed}"
+screens="${*:-signin inbox rows toast empty thread thread-selected thread-long palette-thread search-loading html html-images html-wide attachments labels invite reply reply-quotes quotes quotes-expanded quotes-text quotes-text-expanded compose compose-draft palette search sidebar calendar account-menu account-menu-photo account-switcher settings settings-account settings-account-photo settings-signature settings-appearance settings-shortcuts integrations notion-save notion-link syncing loading loading-empty loading-indeterminate synced offline syncfailed signedout}"
 mkdir -p "$out"
 swift build --product Mail
 bin="$(swift build --product Mail --show-bin-path)/Mail"

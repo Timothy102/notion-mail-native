@@ -114,6 +114,7 @@ enum Snapshot {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { app.syncStatus = .idle }
         case "offline": app.syncStatus = .offline
         case "syncfailed": app.syncStatus = .failed("Gmail 503: Backend Error")
+        case "signedout": app.syncStatus = .signedOut
         case "integrations": app.settings = .integrations
         case "notion-save", "notion-link", "invite":
             let inbox = (try? app.store.db.read { try Store.threads($0, in: .inbox) }) ?? []

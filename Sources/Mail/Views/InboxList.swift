@@ -82,7 +82,8 @@ struct InboxList: View {
     }
 
     /// First sync (or a resync) is still filling the store, so the list isn't the whole story yet.
-    private var isLoading: Bool { app.syncStatus.isBackfilling || app.isAwaitingFirstSync }
+    /// Offline, failed or signed out before the first sync: show the empty list and its notice, not a skeleton forever.
+    private var isLoading: Bool { app.syncStatus.isBackfilling || (app.isAwaitingFirstSync && [.idle, .syncing].contains(app.syncStatus)) }
 
     private func skeletonCount(_ height: CGFloat) -> Int {
         max(0, Int((height / Theme.Metrics.rowHeight).rounded(.up)))

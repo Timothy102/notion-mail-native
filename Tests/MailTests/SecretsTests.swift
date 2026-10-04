@@ -21,3 +21,12 @@ final class SecretsTests: XCTestCase {
         XCTAssertEqual(Secrets.get("notion"), "secret_x", "deleting one key keeps the others")
     }
 }
+
+final class AuthRevokedTests: XCTestCase {
+    func testOnlyInvalidGrantForgetsTheLogin() {
+        XCTAssertTrue(Auth.isRevoked(Data(#"{"error":"invalid_grant","error_description":"Token has been expired or revoked."}"#.utf8)))
+        XCTAssertFalse(Auth.isRevoked(Data(#"{"error":"internal_failure"}"#.utf8)))
+        XCTAssertFalse(Auth.isRevoked(Data("<html>Hotel Wi-Fi login</html>".utf8)))
+        XCTAssertFalse(Auth.isRevoked(Data()))
+    }
+}

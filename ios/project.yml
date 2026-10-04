@@ -35,6 +35,8 @@ targets:
           - CFBundleURLName: google-oauth
             CFBundleURLSchemes: [com.googleusercontent.apps.$(GOOGLE_CLIENT_ID_PREFIX)]
         ITSAppUsesNonExemptEncryption: false
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.timcvetko.nmail.refresh]
         UILaunchScreen:
           UIColorName: LaunchBackground
         UIApplicationSceneManifest:

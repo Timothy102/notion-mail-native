@@ -73,6 +73,7 @@ struct MainView: View {
         case "accounts": sheet = .accounts
         case "settings": sheet = .settings
         case "empty": app.go(to: .spam)
+        case "signedout": app.syncStatus = .signedOut
         default: break
         }
     }

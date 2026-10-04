@@ -8,6 +8,8 @@ public enum SyncStatus: Sendable, Equatable {
     /// First run (or a resync after the history id expired): messages fetched so far of `total`.
     case backfilling(fetched: Int, total: Int)
     case offline
+    /// Google revoked the login; syncing resumes after `AccountManager.reauthenticate()`.
+    case signedOut
     case failed(String)
 
     public var isBackfilling: Bool {
@@ -325,6 +327,8 @@ extension AppState {
                     isAwaitingFirstSync = false
                 } catch where isOffline(error) {
                     syncStatus = .offline
+                } catch AuthError.signedOut {
+                    syncStatus = .signedOut
                 } catch {
                     syncStatus = .failed(error.localizedDescription)
                 }

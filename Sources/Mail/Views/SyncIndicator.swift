@@ -5,6 +5,7 @@ import SwiftUI
 /// Empty when all is well.
 struct SyncIndicator: View {
     @Environment(AppState.self) private var app
+    @Environment(AccountManager.self) private var accounts
     @State private var justFinished = false
 
     var body: some View {
@@ -34,6 +35,16 @@ struct SyncIndicator: View {
         case .offline:
             label("Offline") { symbol("wifi.slash") }
                 .help(pendingHelp)
+        case .signedOut:
+            Button(action: reauthenticate) {
+                label("Sign in again") { symbol("person.crop.circle.badge.exclamationmark") }
+                    .padding(.horizontal, 6)
+                    .frame(height: 28)
+                    .hoverFill()
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, -6)
+            .help("Google ended this login. Sign in again to keep syncing.")
         case .failed(let message):
             Button { app.syncNow() } label: {
                 label("Sync paused") { symbol("exclamationmark.triangle") }
@@ -48,6 +59,12 @@ struct SyncIndicator: View {
             if justFinished {
                 label("Up to date") { symbol("checkmark") }
             }
+        }
+    }
+
+    private func reauthenticate() {
+        Task {
+            do { try await accounts.reauthenticate() } catch { app.show(Toast("Couldn't sign in: \(SignInView.describe(error))")) }
         }
     }
 

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=${1:-build/snaps}
 shift || true
-SCREENS=${*:-inbox thread html compose search mailboxes accounts settings signin swipe empty}
+SCREENS=${*:-inbox thread html compose search mailboxes accounts settings signin swipe empty signedout}
 NAME=NMail-iPhone
 BUNDLE=com.timcvetko.nmail
 mkdir -p "$OUT"
