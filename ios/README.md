@@ -71,5 +71,5 @@ It appears in TestFlight after App Store Connect finishes processing.
 
 ## What syncs when
 
-Foreground only: on launch, when the app returns to the foreground, every 30 s while it is open, and on pull to
-refresh. Background refresh (`BGAppRefreshTask`) is future work.
+On launch, when the app returns to the foreground, every 30 s while it is open, and on pull to refresh. While the
+app is closed, background app refresh (`BGAppRefreshTask`) syncs whenever iOS schedules it.
