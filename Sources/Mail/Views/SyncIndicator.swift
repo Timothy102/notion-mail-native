@@ -87,3 +87,30 @@ struct SyncIndicator: View {
         .transition(.opacity)
     }
 }
+
+/// Above the inbox when Google ended the login: the sidebar footer is easy to miss, and mail silently stops.
+struct ReauthBanner: View {
+    @Environment(AppState.self) private var app
+    @Environment(AccountManager.self) private var accounts
+    @State private var busy = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark").foregroundStyle(Theme.textRed)
+            Text("Google signed you out, so new mail isn't arriving.").textStyle(.small).foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Button("Sign in again") {
+                busy = true
+                Task {
+                    do { try await accounts.reauthenticate() } catch { app.show(Toast("Couldn't sign in: \(SignInView.describe(error))")) }
+                    busy = false
+                }
+            }
+            .buttonStyle(.primary)
+            .disabled(busy)
+        }
+        .padding(.horizontal, Theme.Metrics.checkboxX)
+        .padding(.vertical, 8)
+        .background(Theme.hover)
+    }
+}

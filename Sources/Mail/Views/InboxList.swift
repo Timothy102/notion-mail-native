@@ -21,6 +21,7 @@ struct InboxList: View {
             VStack(spacing: 0) {
                 header
                     .zIndex(1)
+                if app.syncStatus == .signedOut { ReauthBanner() }
                 content(layout, height: listHeight)
             }
         }
