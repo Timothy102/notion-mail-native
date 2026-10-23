@@ -6,8 +6,28 @@ public struct LabelSnapshot: Sendable, Hashable {
     public var labelIds: [String: [String]]
 }
 
+/// A label change queued for Gmail. The queue is persisted under `Store.pendingMutationsKey`, and anything a
+/// sync writes gets the queue re-applied on top, so mail Gmail hasn't heard about yet keeps its local state.
+public struct PendingMutation: Codable, Sendable {
+    public var threadIds: [String]
+    public var add: Set<String>
+    public var remove: Set<String>
+    /// Labels before the change, to roll back to if Gmail rejects it. Not persisted.
+    public var rollback: LabelSnapshot?
+
+    private enum CodingKeys: String, CodingKey { case threadIds, add, remove }
+
+    public init(threadIds: [String], add: Set<String>, remove: Set<String>, rollback: LabelSnapshot? = nil) {
+        self.threadIds = threadIds
+        self.add = add
+        self.remove = remove
+        self.rollback = rollback
+    }
+}
+
 public final class Store: Sendable {
     public let db: DatabaseQueue
+    public static let pendingMutationsKey = "pendingMutations"
 
     /// nil path = in-memory (demo, tests). A file is opened in WAL mode with a 5 s busy timeout, because the
     /// app and the nmail-mcp server open the same database from two processes.
@@ -182,7 +202,19 @@ public final class Store: Sendable {
                 try db.execute(sql: "DELETE FROM attachments WHERE messageId = ?", arguments: [m.id])
             }
             for a in attachments { try a.upsert(db) }
-            for id in Set(messages.map(\.threadId)) { try Self.refreshThread(db, id: id) }
+            let threads = Set(messages.map(\.threadId))
+            for id in threads { try Self.refreshThread(db, id: id) }
+            try Self.reapplyPending(db, threadIds: threads)
+        }
+    }
+
+    /// Re-applies queued changes to the given threads over what a sync just wrote.
+    static func reapplyPending(_ db: Database, threadIds: Set<String>) throws {
+        guard let json = try String.fetchOne(db, sql: "SELECT value FROM kv WHERE key = ?", arguments: [pendingMutationsKey]) else { return }
+        for m in try JSONDecoder().decode([PendingMutation].self, from: Data(json.utf8)) {
+            let ids = m.threadIds.filter(threadIds.contains)
+            guard !ids.isEmpty else { continue }
+            _ = try modify(db, Message.filter(ids.contains(Column("threadId"))), add: m.add, remove: m.remove, threads: ids)
         }
     }
 
@@ -216,21 +248,23 @@ public final class Store: Sendable {
     }
 
     private func modify(_ messages: QueryInterfaceRequest<Message>, add: Set<String>, remove: Set<String>, threads: [String]) throws -> LabelSnapshot {
-        try db.write { db in
-            var before: [String: [String]] = [:]
-            var touched = Set(threads)
-            for var m in try messages.fetchAll(db) {
-                before[m.id] = m.labelIds
-                var labels = Set(m.labelIds)
-                labels.subtract(remove)
-                labels.formUnion(add)
-                m.labelIds = labels.sorted()
-                try m.update(db)
-                touched.insert(m.threadId)
-            }
-            for id in touched { try Self.refreshThread(db, id: id) }
-            return LabelSnapshot(labelIds: before)
+        try db.write { try Self.modify($0, messages, add: add, remove: remove, threads: threads) }
+    }
+
+    private static func modify(_ db: Database, _ messages: QueryInterfaceRequest<Message>, add: Set<String>, remove: Set<String>, threads: [String]) throws -> LabelSnapshot {
+        var before: [String: [String]] = [:]
+        var touched = Set(threads)
+        for var m in try messages.fetchAll(db) {
+            before[m.id] = m.labelIds
+            var labels = Set(m.labelIds)
+            labels.subtract(remove)
+            labels.formUnion(add)
+            m.labelIds = labels.sorted()
+            try m.update(db)
+            touched.insert(m.threadId)
         }
+        for id in touched { try refreshThread(db, id: id) }
+        return LabelSnapshot(labelIds: before)
     }
 
     public func restore(_ snapshot: LabelSnapshot) throws {

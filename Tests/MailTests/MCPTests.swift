@@ -301,6 +301,27 @@ final class MCPTests: XCTestCase {
         XCTAssertFalse(drafts.contains("dm1"), "the old draft message is replaced")
     }
 
+    /// create_draft → review → send must consume the Gmail draft, not leave it behind next to a fresh copy.
+    func testSendByDraftIdConsumesTheDraft() async throws {
+        let store = try seed()
+        let m = try replyTarget(store)
+        StubGmail.reset([
+            "POST drafts": .json(200, #"{"id":"d1","message":{"id":"dm1","threadId":"\#(m.threadId)"}}"#),
+            "PUT drafts/d1": .json(200, #"{"id":"d1","message":{"id":"dm2","threadId":"\#(m.threadId)"}}"#),
+            "POST drafts/send": .json(200, #"{"id":"sent1","threadId":"\#(m.threadId)","labelIds":["SENT"]}"#),
+        ])
+        let s = MCPServer(storage: AccountStorage(base: base), gmail: { _ in StubGmail.client }) { _ in true }
+        _ = try await call(s, "create_draft", ["reply_to_message_id": .string(m.id), "body": "Reviewed and good"])
+        let preview = try await call(s, "send", ["draft_id": "d1"])
+        XCTAssertEqual(preview["sent"], false)
+        XCTAssertTrue(preview["preview"]?["text"]?.string?.hasPrefix("Reviewed and good") ?? false, "\(preview)")
+        let sent = try await call(s, "send", ["draft_id": "d1", "confirm": true])
+        XCTAssertEqual(sent["id"], "sent1")
+        XCTAssertEqual(StubGmail.log, ["POST drafts", "PUT drafts/d1", "POST drafts/send"])
+        let left = try await store.db.read { try Store.drafts($0).map(\.id) }
+        XCTAssertFalse(left.contains("d1"), "\(left)")
+    }
+
     func testLightMarkdown() {
         XCTAssertEqual(LightMarkdown.html("a *b* _c_ **d** 2 * 3 * 4 snake_case_name"),
                        "a <em>b</em> <em>c</em> <strong>d</strong> 2 * 3 * 4 snake_case_name")

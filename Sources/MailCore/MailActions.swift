@@ -29,16 +29,6 @@ public final class MailActions {
     public var onToast: (Toast) -> Void = { _ in }
     public var onOfflineChange: (Bool) -> Void = { _ in }
 
-    struct Mutation: Codable {
-        var threadIds: [String]
-        var add: Set<String>
-        var remove: Set<String>
-        /// Labels before the change, to roll back to if Gmail rejects it. Not persisted.
-        var rollback: LabelSnapshot?
-
-        private enum CodingKeys: String, CodingKey { case threadIds, add, remove }
-    }
-
     private struct UndoEntry {
         var threadIds: [String]
         var add: Set<String>
@@ -46,9 +36,8 @@ public final class MailActions {
         var snapshot: LabelSnapshot
     }
 
-    static let pendingKey = "pendingMutations"
     private var undoStack: [UndoEntry] = []
-    private(set) var pending: [Mutation]
+    private(set) var pending: [PendingMutation]
     private var drain: Task<Void, Never>?
     private(set) var isOffline = false {
         didSet { if isOffline != oldValue { onOfflineChange(isOffline) } }
@@ -57,8 +46,8 @@ public final class MailActions {
     public init(store: Store, gmail: GmailClient?) {
         self.store = store
         self.gmail = gmail
-        pending = (try? store.get(Self.pendingKey)).flatMap { $0 }
-            .flatMap { try? JSONDecoder().decode([Mutation].self, from: Data($0.utf8)) } ?? []
+        pending = (try? store.get(Store.pendingMutationsKey)).flatMap { $0 }
+            .flatMap { try? JSONDecoder().decode([PendingMutation].self, from: Data($0.utf8)) } ?? []
     }
 
     public var canUndo: Bool { !undoStack.isEmpty }
@@ -130,7 +119,7 @@ public final class MailActions {
             current = try labels(of: Array(entry.snapshot.labelIds.keys))
             try store.restore(entry.snapshot)
         } catch { report("Couldn't undo", error); return false }
-        enqueue(Mutation(threadIds: entry.threadIds, add: entry.remove, remove: entry.add, rollback: current))
+        enqueue(PendingMutation(threadIds: entry.threadIds, add: entry.remove, remove: entry.add, rollback: current))
         return true
     }
 
@@ -164,9 +153,7 @@ public final class MailActions {
         }
     }
 
-    /// Re-applies queued changes on top of what a sync just wrote, so mail Gmail hasn't heard about yet
-    /// keeps its local state.
-    public func reapplyPending() {
+    private func reapplyPending() {
         for m in pending { _ = try? store.modify(threadIds: m.threadIds, add: m.add, remove: m.remove) }
     }
 
@@ -187,10 +174,10 @@ public final class MailActions {
         if let toast {
             onToast(Toast(toast, actionTitle: "Undo") { [weak self] in self?.undo() })
         }
-        enqueue(Mutation(threadIds: threadIds, add: add, remove: remove, rollback: snapshot))
+        enqueue(PendingMutation(threadIds: threadIds, add: add, remove: remove, rollback: snapshot))
     }
 
-    private func enqueue(_ mutation: Mutation) {
+    private func enqueue(_ mutation: PendingMutation) {
         guard gmail != nil else { return }
         pending.append(mutation)
         persist()
@@ -203,7 +190,7 @@ public final class MailActions {
     }
 
     /// Restores the labels from before `mutation`, then re-applies the changes queued after it.
-    private func rollBack(_ mutation: Mutation) {
+    private func rollBack(_ mutation: PendingMutation) {
         guard let snapshot = mutation.rollback else { return }
         try? store.restore(snapshot)
         reapplyPending()
@@ -211,7 +198,7 @@ public final class MailActions {
 
     private func persist() {
         let json = pending.isEmpty ? nil : (try? JSONEncoder().encode(pending)).map { String(decoding: $0, as: UTF8.self) }
-        try? store.set(Self.pendingKey, json)
+        try? store.set(Store.pendingMutationsKey, json)
     }
 
     private func labels(of messageIds: [String]) throws -> LabelSnapshot {
@@ -220,7 +207,7 @@ public final class MailActions {
         }
     }
 
-    private nonisolated static func send(_ m: Mutation, _ gmail: GmailClient) async throws {
+    private nonisolated static func send(_ m: PendingMutation, _ gmail: GmailClient) async throws {
         for id in m.threadIds {
             if m.add.contains("TRASH") { try await gmail.trashThread(id) }
             if m.remove.contains("TRASH") { try await gmail.untrashThread(id) }

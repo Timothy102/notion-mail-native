@@ -74,9 +74,11 @@ struct SearchView: View {
                         ThreadRow(thread: hit.thread, extras: extras.value[hit.thread.id], labels: byId, layout: layout, isLast: i == hits.count - 1,
                                   terms: terms, excerpt: hit.excerpt)
                             .id(hit.id)
+                            .transition(InboxList.rowTransition)
                     }
                 }
                 .padding(.bottom, 24)
+                .animation(Theme.Motion.list, value: hits.map(\.id))
             }
             .onChange(of: app.focusedThreadId) { _, id in
                 if let id { proxy.scrollTo(id) }

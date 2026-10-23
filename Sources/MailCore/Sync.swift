@@ -214,6 +214,7 @@ public struct Sync: Sendable {
             }
             fetch.subtract(try String.fetchSet(db, Message.select(Column("id")).filter(keys: fetch)))
             for id in threads { try Store.refreshThread(db, id: id) }
+            try Store.reapplyPending(db, threadIds: threads)
             return fetch
         }
     }
@@ -321,7 +322,6 @@ extension AppState {
                 if !syncStatus.isBackfilling { syncStatus = .syncing }
                 do {
                     try await sync.run()
-                    actions.reapplyPending()
                     account = try? await store.db.read(Store.account)
                     syncStatus = .idle
                     isAwaitingFirstSync = false

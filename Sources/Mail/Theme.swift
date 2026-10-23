@@ -152,6 +152,10 @@ enum Theme {
         static let standard = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.2)
         static let hover = Animation.easeOut(duration: 0.1)
         static let fast = Animation.easeOut(duration: 0.15)
+        /// Rows leaving and the list closing up behind them: a light spring, so triage feels physical.
+        static let list = Animation.spring(duration: 0.38, bounce: 0.18)
+        /// Small state marks (unread dot, star): a quick pop.
+        static let pop = Animation.spring(duration: 0.3, bounce: 0.35)
     }
 }
 

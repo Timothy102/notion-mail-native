@@ -152,7 +152,7 @@ final class SyncTests: XCTestCase {
         await actions.settle()
         XCTAssertTrue(try inInbox(store, "t1"), "rolled back")
         XCTAssertEqual(toasts.last, "Gmail didn't accept the change, so it was undone")
-        XCTAssertNil(try store.get(MailActions.pendingKey))
+        XCTAssertNil(try store.get(Store.pendingMutationsKey))
     }
 
     @MainActor
@@ -177,18 +177,29 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(offline, [true, false])
         XCTAssertEqual(actions.pendingCount, 0)
         XCTAssertEqual(StubGmail.log, ["POST threads/t1/modify", "POST threads/t2/modify"], "sent in order")
-        XCTAssertNil(try store.get(MailActions.pendingKey))
+        XCTAssertNil(try store.get(Store.pendingMutationsKey))
     }
 
     @MainActor
-    func testReapplyKeepsQueuedChangesOverSyncedState() throws {
+    /// A backfill chunk or history delta landing while the change is still queued must not undo it on screen.
+    func testSyncedStateKeepsQueuedChanges() throws {
         let store = try seededStore()
         StubGmail.reset(["POST threads/t1/modify": .offline])
         let actions = MailActions(store: store, gmail: StubGmail.client)
         actions.archive(["t1"])
-        try store.setLabels(messageId: "m1", ["INBOX", "UNREAD"])
-        actions.reapplyPending()
+        actions.setRead(["t1"], true)
+        var stale = try XCTUnwrap(store.db.read { try Message.fetchOne($0, key: "m1") })
+        stale.labelIds = ["INBOX", "UNREAD"]
+        try store.upsert(messages: [stale])
         XCTAssertFalse(try inInbox(store, "t1"))
+        XCTAssertFalse(try isUnread(store, "t1"))
+        _ = try Sync(gmail: StubGmail.client, store: store).apply(HistoryChanges(labels: ["m1": (add: ["UNREAD", "INBOX"], remove: [])]))
+        XCTAssertFalse(try inInbox(store, "t1"))
+        XCTAssertFalse(try isUnread(store, "t1"))
+    }
+
+    private func isUnread(_ store: Store, _ threadId: String) throws -> Bool {
+        try store.db.read { try MailThread.fetchOne($0, key: threadId)?.isUnread ?? true }
     }
 
     private func inInbox(_ store: Store, _ threadId: String) throws -> Bool {

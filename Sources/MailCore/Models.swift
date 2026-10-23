@@ -176,6 +176,9 @@ public enum Mailbox: Hashable, Sendable {
     case inbox, starred, sent, drafts, all, spam, trash
     case label(String)
 
+    /// Sent, Spam and Trash never show an unread badge in the sidebar.
+    public var showsUnreadCount: Bool { ![.sent, .spam, .trash].contains(self) }
+
     /// The Gmail label a thread must carry; nil for All Mail.
     public var labelId: String? {
         switch self {

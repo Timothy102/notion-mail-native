@@ -128,7 +128,7 @@ struct InboxList: View {
                                     }
                                 }
                                 .id(thread.id)
-                                .transition(.opacity)
+                                .transition(Self.rowTransition)
                             }
                         }
                     }
@@ -139,7 +139,7 @@ struct InboxList: View {
                 }
                 .padding(.top, Theme.Metrics.listTopInset)
                 .padding(.bottom, 24)
-                .animation(Theme.Motion.standard, value: visibleIds)
+                .animation(Theme.Motion.list, value: visibleIds)
                 .animation(.easeOut(duration: 0.4), value: isLoading)
             }
             .onChange(of: app.focusedThreadId) { _, id in
@@ -149,6 +149,10 @@ struct InboxList: View {
             }
         }
     }
+
+    /// Archived or trashed rows slide out to the right and fade while the rows below spring up (§6);
+    /// undo brings them back the same way.
+    static let rowTransition: AnyTransition = .move(edge: .trailing).combined(with: .opacity)
 
     private func isFilled(_ id: String) -> Bool {
         app.selectedThreadIds.contains(id) || app.focusedThreadId == id || app.openThreadId == id
@@ -483,7 +487,8 @@ struct ThreadRow: View {
             Circle().fill(Theme.accent)
                 .frame(width: Theme.Metrics.unreadDotSize, height: Theme.Metrics.unreadDotSize)
                 .opacity(thread.isUnread ? 1 : 0)
-                .animation(Theme.Motion.fast, value: thread.isUnread)
+                .scaleEffect(thread.isUnread ? 1 : 0.3)
+                .animation(Theme.Motion.pop, value: thread.isUnread)
                 .padding(.leading, Theme.Metrics.unreadDotCenterX - Theme.Metrics.unreadDotSize / 2 - Theme.Metrics.checkboxX - Theme.Metrics.checkboxSize - 8)
             sender
                 .frame(width: layout.senderWidth, alignment: .leading)

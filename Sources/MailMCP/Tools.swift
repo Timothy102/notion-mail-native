@@ -118,9 +118,12 @@ enum Tools {
                 Send a new message, reply, reply-all or forward, built exactly like NMail's composer (signature, Notion-style \
                 HTML, Gmail threading and quote). PREVIEW BY DEFAULT: without confirm:true it returns from, to, cc, subject, \
                 the text with the signature and whether it threads, and sends nothing. Show Tim the preview first. \
-                With confirm:true Tim still has to click Allow in an on-screen AxiosM dialog.
+                With confirm:true Tim still has to click Allow in an on-screen AxiosM dialog. To send a draft Tim has                 reviewed (from create_draft / list_drafts), pass its draft_id: Gmail sends that draft and removes it.                 Re-sending a draft's text as a new message leaves the draft behind.
                 """,
-             properties: compose.merging(["confirm": ["type": "boolean", "default": false, "description": "true sends. false (default) only previews."]]) { a, _ in a },
+             properties: compose.merging([
+                 "confirm": ["type": "boolean", "default": false, "description": "true sends. false (default) only previews."],
+                 "draft_id": ["type": "string", "description": "Send this existing draft instead of composing a new message. Other fields override the draft's."],
+             ]) { a, _ in a },
              destructive: true),
         Tool(name: "send_bulk", title: "Send many",
              description: """

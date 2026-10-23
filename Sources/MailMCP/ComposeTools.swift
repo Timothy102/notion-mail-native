@@ -133,7 +133,7 @@ extension MCPServer {
 
     func send(_ args: JSON) async throws -> SendResult {
         let ctx = try context(args)
-        let d = try await draft(ctx, args)
+        let d = if let id = args["draft_id"]?.string { try await loadDraft(ctx, id: id, args) } else { try await draft(ctx, args) }
         try Self.validateForSending(d)
         guard args["confirm"]?.bool == true else {
             return SendResult(sent: false, preview: Preview(d), note: "Preview only, nothing sent. Call again with confirm:true to send.")
@@ -220,6 +220,14 @@ extension MCPServer {
     func updateDraft(_ args: JSON) async throws -> DraftResult {
         let ctx = try context(args)
         guard let id = args["draft_id"]?.string else { throw ToolError("draft_id is required.") }
+        let d = try await loadDraft(ctx, id: id, args)
+        let saved = try await Outbox.saveDraft(d, store: ctx.store, gmail: try ctx.requireGmail())
+        return DraftResult(draftId: saved.draftId, messageId: saved.draftMessageId, threadId: saved.threadId, preview: Preview(saved))
+    }
+
+    /// The saved draft as a composer draft, with any recipients, subject, body or send_as in `args` applied over it.
+    /// Keeps its Gmail draft id, so saving updates it and sending consumes it.
+    private func loadDraft(_ ctx: Context, id: String, _ args: JSON) async throws -> ComposeDraft {
         let gmail = try ctx.requireGmail()
         if try await ctx.store.db.read({ try Draft.exists($0, key: id) }) == false {
             _ = await freshen(ctx, force: true)
@@ -247,8 +255,7 @@ extension MCPServer {
         }
         try Self.fill(&d, args)
         Self.write(&d, args["body"]?.string ?? d.body, sign: args["sign"]?.bool ?? signed)
-        let saved = try await Outbox.saveDraft(d, store: ctx.store, gmail: gmail)
-        return DraftResult(draftId: saved.draftId, messageId: saved.draftMessageId, threadId: saved.threadId, preview: Preview(saved))
+        return d
     }
 
     /// What was written, and the quoted history (a reply's "On … wrote:" block or a forwarded message) below it.

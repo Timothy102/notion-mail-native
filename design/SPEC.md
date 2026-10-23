@@ -490,8 +490,9 @@ All buttons have a 1 pt border, clear when the style has none. Transitions are 1
 |---|---|
 | Standard ease | `timingCurve(0.16, 1, 0.3, 1, duration: 0.2)` (`Theme.Motion.standard`) |
 | Hover backgrounds | 100 ms ease-out in, instant out (`Theme.Motion.hover`) |
-| Row removal (archive, trash) | the row collapses its height to 0 over 0.2 s standard ease and the rows below slide up. Focus moves to the next row, or the previous row if it was last. |
-| Undo (`z`) | the row reinserts with the reverse animation, and the toast dismisses |
+| Row removal (archive, trash) | the row slides out to the right and fades while the rows below spring up (`Theme.Motion.list`, 0.38 s spring, bounce 0.18). Focus moves to the next row, or the previous row if it was last. |
+| Undo (`z`) | the row slides back in from the right with the same spring, and the toast dismisses |
+| Unread dot | pops in and out (`Theme.Motion.pop`: scale 0.3 ↔ 1 with opacity, 0.3 s spring). Sidebar badges never show for Sent, Spam or Trash. |
 | Peek open or close | 0.2 s standard: a 16 pt slide plus fade. The list never reflows. |
 | Palette | scrim fades 150 ms. The panel scales from 0.98 and fades over 150 ms. On close, 100 ms fade. |
 | Composer | rises 12 pt with a fade over 0.2 s. Minimising animates the frame. |

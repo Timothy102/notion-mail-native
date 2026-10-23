@@ -53,7 +53,7 @@ struct MailboxesSheet: View {
     }
 
     private func row<Icon: View>(_ box: Mailbox, title: String? = nil, @ViewBuilder icon: () -> Icon) -> some View {
-        let count = box == .sent ? 0 : box.labelId.flatMap { counts.value[$0] } ?? 0
+        let count = box.showsUnreadCount ? box.labelId.flatMap { counts.value[$0] } ?? 0 : 0
         let current = app.mailbox == box
         return Button {
             app.go(to: box)

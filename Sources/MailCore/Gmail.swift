@@ -328,11 +328,14 @@ public struct GmailClient: Sendable {
                 continue
             }
             SyncLog.write("http \(status) \(method) \(path.prefix(40)) attempt \(attempt)")
-            let rateLimited = status == 429 || (status == 403 && String(decoding: data, as: UTF8.self).contains("ateLimitExceeded"))
+            let text = String(decoding: data, as: UTF8.self)
+            let rateLimited = status == 429 || (status == 403 && text.contains("ateLimitExceeded"))
             if (rateLimited || status >= 500), attempt < 5 {
                 let retryAfter = http?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
-                // Gmail's limit is per second, so short backoffs recover fastest.
-                let delay = retryAfter ?? min(8, 0.5 * pow(2, Double(attempt))) + Double.random(in: 0..<0.25)
+                // Most Gmail limits are per second, so short backoffs recover fastest. Newer projects also get a
+                // per-minute "Total Query Cost" cap, which only clears when the minute rolls over.
+                let backoff = text.contains("per minute") ? 61 : min(8, 0.5 * pow(2, Double(attempt)))
+                let delay = retryAfter ?? backoff + Double.random(in: 0..<0.25)
                 try await Task.sleep(for: .seconds(delay))
                 attempt += 1
                 continue

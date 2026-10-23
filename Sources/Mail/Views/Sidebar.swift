@@ -96,7 +96,7 @@ struct Sidebar: View {
     }
 
     private func mailbox(_ box: Mailbox, tint: Color = Theme.iconSecondary) -> some View {
-        SidebarItem(title: box.title, count: box.labelId.flatMap { box == .sent ? nil : counts.value[$0] } ?? 0,
+        SidebarItem(title: box.title, count: box.labelId.flatMap { box.showsUnreadCount ? counts.value[$0] : nil } ?? 0,
                     isSelected: isCurrent(box), icon: { SlotIcon(systemName: box.symbol, tint: tint) }) {
             app.go(to: box)
         }
